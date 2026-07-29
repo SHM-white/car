@@ -1,0 +1,16 @@
+/*
+ * SPDX-FileCopyrightText: 2023-2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-License-Identifier: Apache-2.0
+ */
+#pragma once
+
+// 直接加载 ESP32_Display_Panel 1.0.4 内置的微雪 7 英寸板卡定义。
+#define ESP_PANEL_BOARD_DEFAULT_USE_SUPPORTED (1)
+
+#if ESP_PANEL_BOARD_DEFAULT_USE_SUPPORTED
+#define BOARD_WAVESHARE_ESP32_S3_TOUCH_LCD_7
+
+#define ESP_PANEL_BOARD_SUPPORTED_FILE_VERSION_MAJOR 1
+#define ESP_PANEL_BOARD_SUPPORTED_FILE_VERSION_MINOR 2
+#define ESP_PANEL_BOARD_SUPPORTED_FILE_VERSION_PATCH 0
+#endif
