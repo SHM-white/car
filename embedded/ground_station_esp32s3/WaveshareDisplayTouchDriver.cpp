@@ -212,11 +212,15 @@ void WaveshareDisplayTouchDriver::queueAction(TouchAction action) {
 }
 
 void WaveshareDisplayTouchDriver::task1Event(lv_event_t *event) {
-  static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::TASK_1);
+  auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
+  driver->local_test_mode_ = false;
+  driver->queueAction(TouchAction::TASK_1);
 }
 
 void WaveshareDisplayTouchDriver::task2Event(lv_event_t *event) {
-  static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::TASK_2);
+  auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
+  driver->local_test_mode_ = false;
+  driver->queueAction(TouchAction::TASK_2);
 }
 
 void WaveshareDisplayTouchDriver::testTaskEvent(lv_event_t *event) {

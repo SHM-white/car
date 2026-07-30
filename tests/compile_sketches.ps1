@@ -6,7 +6,7 @@ $protocolSource = Join-Path $protocolInclude 'DTaskProtocol.cpp'
 $build = Join-Path $PSScriptRoot 'build\host-sketches'
 New-Item -ItemType Directory -Force -Path $build | Out-Null
 
-function Compile-Sketch([string]$name, [string]$folder) {
+function Compile-Sketch([string]$name, [string]$folder, [string[]]$extraFlags = @()) {
   $sketch = Join-Path $folder "$name.ino"
   $objects = @(
     (Join-Path $build "$name-sketch.o"),
@@ -14,7 +14,7 @@ function Compile-Sketch([string]$name, [string]$folder) {
     (Join-Path $build "$name-stubs.o"),
     (Join-Path $build "$name-main.o")
   )
-  $common = @('-std=c++17', '-Wall', '-Wextra', '-Werror', '-Wno-error=cpp', '-I', $stub, '-I', $protocolInclude, '-I', $folder)
+  $common = @('-std=c++17', '-Wall', '-Wextra', '-Werror', '-Wno-error=cpp', '-I', $stub, '-I', $protocolInclude, '-I', $folder) + $extraFlags
   & g++ @common -x c++ -c $sketch -o $objects[0]
   if ($LASTEXITCODE -ne 0) { throw "$name sketch compile failed" }
   & g++ @common -c $protocolSource -o $objects[1]
@@ -28,6 +28,6 @@ function Compile-Sketch([string]$name, [string]$folder) {
 }
 
 Compile-Sketch 'car_esp32s3' (Join-Path $root 'embedded\car_esp32s3')
-Compile-Sketch 'ground_station_esp32s3' (Join-Path $root 'embedded\ground_station_esp32s3')
+Compile-Sketch 'ground_station_esp32s3' (Join-Path $root 'embedded\ground_station_esp32s3') @('-DHMI_USE_SERIAL_DISPLAY=1')
 Compile-Sketch 'car' (Join-Path $root 'car')
 Write-Output 'Both Arduino sketches passed host-stub compilation.'

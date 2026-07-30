@@ -175,10 +175,22 @@ FPS 按 RGB 面板 VSYNC 计数，每秒更新一次。正常情况下通常接�
 - 删除重复安装的旧版 LVGL 或显示库。
 - 确认使用 LVGL 8.4.0，而不是 LVGL 9.x。
 
-## 10. 资料
+## 10. 调试模拟器
+
+开发阶段可使用主机端 UDP 模拟器验证协议处理和状态机逻辑，无需 ESP32 硬件：
+
+```bash
+bash readonly/tests/build_ground_station_sim.sh
+bash readonly/tests/run_ground_station_sim.sh
+```
+
+详见 `SIMULATOR.md`。
+
+## 11. 资料
 
 - 微雪 Arduino 开发说明：<https://docs.waveshare.net/ESP32-S3-Touch-LCD-7/Development-Environment-Setup-Arduino/>
 - 微雪 RGB 屏示例：<https://docs.waveshare.net/docs/ESP32/ESP32-S3/ESP32-S3-Touch-LCD-7/Arduino/Arduino-RGB-LCD-Demo/>
 - 项目构建说明：`../BUILD.md`
 - 硬件检查表：`../HARDWARE_CHECKLIST.md`
 - UDP 协议说明：`../shared_protocol/PROTOCOL_V1.md`
+- 调试模拟器：`SIMULATOR.md`
