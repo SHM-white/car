@@ -2,7 +2,7 @@
 
 本说明适用于 `embedded/car_esp32s3` 中的车辆固件。程序驱动感为八路 I2C 灰度传感器、两路直流电机和双轮编码器，并通过 Wi-Fi/UDP 向 ROS 与地面站发送车辆状态。
 
-> 当前 `car_esp32s3.ino` 使用独立自主循迹入口；路线事件、Wi-Fi/UDP、编码器和启动按钮相关模块仍保留，但当前入口不启用这些功能。
+> 当前 `car_esp32s3.ino` 使用 `CarController + UdpTelemetry` 集成入口：上电后连接 Wi-Fi，车辆由实体按钮启动，并向 ROS 与地面站发送遥测和心跳。
 
 ## 1. 功能范围
 

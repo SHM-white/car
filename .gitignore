@@ -1,4 +1,3 @@
-**/config_local.h
 **/build/
 **/*.bin
 **/*.elf

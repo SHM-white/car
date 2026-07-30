@@ -229,11 +229,18 @@ void WaveshareDisplayTouchDriver::testTaskEvent(lv_event_t *event) {
 }
 
 void WaveshareDisplayTouchDriver::confirmEvent(lv_event_t *event) {
-  static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::CONFIRM);
+  auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
+  // The TEST dialog is owned by the display driver, so the HMI model cannot
+  // close it through confirmChoice(). Leave test mode before forwarding the
+  // action; this also makes confirm/cancel behave consistently in both modes.
+  driver->local_test_mode_ = false;
+  driver->queueAction(TouchAction::CONFIRM);
 }
 
 void WaveshareDisplayTouchDriver::cancelEvent(lv_event_t *event) {
-  static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::CANCEL);
+  auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
+  driver->local_test_mode_ = false;
+  driver->queueAction(TouchAction::CANCEL);
 }
 
 void WaveshareDisplayTouchDriver::createUi() {

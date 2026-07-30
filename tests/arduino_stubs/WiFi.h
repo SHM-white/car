@@ -10,6 +10,7 @@ class WiFiClass {
  public:
   void mode(int) {}
   void setAutoReconnect(bool) {}
+  bool config(const IPAddress &, const IPAddress &, const IPAddress &) { return true; }
   void begin(const char *, const char *) {}
   int status() const { return WL_CONNECTED; }
   IPAddress localIP() const { return IPAddress(192, 168, 20, 3); }

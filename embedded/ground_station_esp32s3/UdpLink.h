@@ -119,6 +119,10 @@ class UdpLink {
   void connect(uint32_t now_ms) {
     last_connect_attempt_ms_ = now_ms;
     Serial.printf("[网络] 正在连接封闭热点 %s\n", hmi_config::WIFI_SSID);
+    if (!WiFi.config(hmi_config::LOCAL_IP, hmi_config::GATEWAY, hmi_config::SUBNET)) {
+      Serial.println("[network fault] Unable to configure the HMI static IP");
+      return;
+    }
     WiFi.begin(hmi_config::WIFI_SSID, hmi_config::WIFI_PASSWORD);
   }
   void drainPacket() { while (udp_.available() > 0) udp_.read(); }

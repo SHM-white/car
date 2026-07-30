@@ -49,6 +49,10 @@ class UdpTelemetry {
   void connect(uint32_t now_ms) {
     last_connect_attempt_ms_ = now_ms;
     Serial.printf("[网络] 正在连接封闭热点 %s\n", car_config::WIFI_SSID);
+    if (!WiFi.config(car_config::LOCAL_IP, car_config::GATEWAY, car_config::SUBNET)) {
+      Serial.println("[network fault] Unable to configure the car static IP");
+      return;
+    }
     WiFi.begin(car_config::WIFI_SSID, car_config::WIFI_PASSWORD);
   }
 
