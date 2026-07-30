@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <esp_system.h>
 
-#include "CarController.h"
+#include "LineFollower.h"
 #include "UdpTelemetry.h"
 
-CarController car;
+LineFollower line_follower;
 UdpTelemetry udp_telemetry;
 
 uint32_t next_telemetry_ms = 0;
@@ -36,21 +36,22 @@ const char *turnName(d_task::TurnClass turn) {
   return "UNKNOWN";
 }
 
-void navigationPrintTask(uint32_t now_ms) {
+[[maybe_unused]] void navigationPrintTask(uint32_t now_ms) {
   static uint32_t next_print_ms = 0;
   if (static_cast<int32_t>(now_ms - next_print_ms) < 0) return;
   next_print_ms = now_ms + kNavigationPrintPeriodMs;
 
-  const d_task::CarTelemetry t = car.telemetry(udp_telemetry.connected());
-  Serial.printf("[导航] state=%s turn=%s event=%u disp=%ldmm vel=%dmm/s fault=0x%04x\n",
-                carStateName(t.state), turnName(t.turn),
-                static_cast<unsigned>(t.event),
-                static_cast<long>(t.displacement_mm),
-                static_cast<int>(t.velocity_mm_s),
-                t.fault_flags);
+  const LineFollower::NavigationData data = line_follower.navigationData();
+  Serial.printf("[导航] state=%s turn=%s line=%s error=%+.3f strength=%.3f left=%+.2f right=%+.2f encoder=%ld/%ld distance=%.3fm speed=%.3fm/s\n",
+                carStateName(data.state), turnName(data.turn),
+                data.line_valid ? "VALID" : "LOST", data.line_error,
+                data.line_strength, data.left_command, data.right_command,
+                static_cast<long>(data.left_encoder_count),
+                static_cast<long>(data.right_encoder_count),
+                data.displacement_m, data.velocity_m_s);
 }
 
-void rosConnectionPrintTask(uint32_t now_ms) {
+[[maybe_unused]] void rosConnectionPrintTask(uint32_t now_ms) {
   static uint32_t next_print_ms = 0;
   if (static_cast<int32_t>(now_ms - next_print_ms) < 0) return;
   next_print_ms = now_ms + kRosStatusPrintPeriodMs;
@@ -81,7 +82,7 @@ void setup() {
   }
   const uint32_t now = millis();
   udp_telemetry.begin(now);
-  car.begin(now);
+  line_follower.begin(now);
   next_telemetry_ms = now;
   next_heartbeat_ms = now;
   initialized = true;
@@ -95,13 +96,13 @@ void loop() {
 
   const uint32_t now = millis();
   udp_telemetry.update(now);
-  car.update(now, micros(), udp_telemetry.connected());
+  line_follower.update(now, micros());
 
   if (static_cast<int32_t>(now - next_telemetry_ms) >= 0) {
     next_telemetry_ms = now + d_task::kCarTelemetryPeriodMs;
-    const d_task::CarTelemetry telemetry = car.telemetry(udp_telemetry.connected());
+    const d_task::CarTelemetry telemetry = line_follower.telemetry(udp_telemetry.connected());
     if (udp_telemetry.sendTelemetry(telemetry, now)) {
-      car.noteTelemetryTransmitted();
+      line_follower.noteTelemetryTransmitted();
     }
   }
 
@@ -111,8 +112,8 @@ void loop() {
   }
 
   // Comment out either call to disable that periodic serial output.
-  //navigationPrintTask(now);
-  rosConnectionPrintTask(now);
+  navigationPrintTask(now);
+  //rosConnectionPrintTask(now);
 
   delay(1);
 }

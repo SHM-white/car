@@ -16,11 +16,18 @@ class LineFollower {
     float line_strength;
     float left_command;
     float right_command;
+    int32_t left_encoder_count;
+    int32_t right_encoder_count;
+    float displacement_m;
+    float velocity_m_s;
   };
 
   bool begin(uint32_t now_ms) {
     const bool motors_ok = motors_.begin();
     const bool sensor_ok = sensors_.begin();
+    encoders_.begin();
+    encoders_.snapshot(last_left_encoder_count_, last_right_encoder_count_);
+    last_odometry_ms_ = now_ms;
     if (!motors_ok || !sensor_ok) {
       fault_flags_ = (!motors_ok ? d_task::FAULT_MOTOR : 0) |
                      (!sensor_ok ? d_task::FAULT_LINE_LOST : 0);
@@ -44,10 +51,17 @@ class LineFollower {
     }
     if (!running_) {
       running_ = true;
+      encoders_.snapshot(last_left_encoder_count_, last_right_encoder_count_);
+      last_odometry_ms_ = now_ms;
+      displacement_m_ = 0.0F;
+      velocity_m_s_ = 0.0F;
+      speed_integral_ = 0.0F;
+      speed_command_ = car_config::SPEED_FEED_FORWARD_COMMAND;
       event_ = d_task::RouteEvent::START;
       ++event_id_;
       event_transmissions_remaining_ = car_config::EVENT_REPEAT_FRAMES;
     }
+    updateOdometry(now_ms);
     if (static_cast<int32_t>(now_us - next_control_us_) < 0) return;
     next_control_us_ = now_us + car_config::CONTROL_PERIOD_US;
 
@@ -69,17 +83,25 @@ class LineFollower {
     if (magnitude >= car_config::LARGE_TURN_ENTER) turn = d_task::TurnClass::LARGE;
     else if (magnitude >= car_config::SMALL_TURN_ENTER) turn = d_task::TurnClass::SMALL;
 
+    int32_t left_encoder_count = 0;
+    int32_t right_encoder_count = 0;
+    encoders_.snapshot(left_encoder_count, right_encoder_count);
     return {state, turn, line_was_valid_, last_error_, last_strength_,
-            left_command_, right_command_};
+            left_command_, right_command_, left_encoder_count, right_encoder_count,
+            displacement_m_, velocity_m_s_};
   }
 
   d_task::CarTelemetry telemetry(bool wifi_connected) const {
     const NavigationData navigation = navigationData();
     uint16_t quality_flags = 0;
     if (navigation.line_valid) quality_flags |= d_task::QUALITY_LINE_VALID;
+    if (encoder_initialized_) quality_flags |= d_task::QUALITY_ENCODER_VALID;
     if (wifi_connected) quality_flags |= d_task::QUALITY_WIFI_CONNECTED;
     return {navigation.state, navigation.turn, event_, event_id_, quality_flags,
-            0, 0,
+            static_cast<int32_t>(constrain(navigation.displacement_m * 1000.0F,
+                                           -2147483.0F, 2147483.0F)),
+            static_cast<int16_t>(constrain(navigation.velocity_m_s * 1000.0F,
+                                           -32768.0F, 32767.0F)),
             static_cast<int16_t>(constrain(navigation.line_error * 1000.0F,
                                            -1000.0F, 1000.0F)),
             fault_flags_};
@@ -91,6 +113,47 @@ class LineFollower {
   }
 
  private:
+  void updateOdometry(uint32_t now_ms) {
+    if (now_ms - last_odometry_ms_ < car_config::ENCODER_PERIOD_MS) return;
+
+    int32_t left_count = 0;
+    int32_t right_count = 0;
+    encoders_.snapshot(left_count, right_count);
+    const int32_t left_delta = left_count - last_left_encoder_count_;
+    const int32_t right_delta = right_count - last_right_encoder_count_;
+    const float meters_per_count = PI * car_config::WHEEL_DIAMETER_M /
+                                   car_config::ENCODER_COUNTS_PER_REVOLUTION;
+    const float left_delta_m = left_delta * meters_per_count;
+    const float right_delta_m = right_delta * meters_per_count;
+    const float center_delta_m = (left_delta_m + right_delta_m) * 0.5F;
+    const float seconds = (now_ms - last_odometry_ms_) / 1000.0F;
+
+    displacement_m_ += center_delta_m;
+    if (seconds > 0.0F) {
+      const float measured_velocity_m_s = center_delta_m / seconds;
+      velocity_m_s_ += car_config::VELOCITY_FILTER_ALPHA *
+                       (measured_velocity_m_s - velocity_m_s_);
+    }
+    last_left_encoder_count_ = left_count;
+    last_right_encoder_count_ = right_count;
+    last_odometry_ms_ = now_ms;
+    encoder_initialized_ = true;
+    odometry_updated_ = true;
+  }
+
+  void updateSpeedControl() {
+    constexpr float kOdometryPeriodS = car_config::ENCODER_PERIOD_MS / 1000.0F;
+    const float speed_error = car_config::TARGET_SPEED_M_S - velocity_m_s_;
+    speed_integral_ = constrain(speed_integral_ + speed_error * kOdometryPeriodS,
+                                -car_config::SPEED_INTEGRAL_LIMIT,
+                                car_config::SPEED_INTEGRAL_LIMIT);
+    speed_command_ = constrain(
+        car_config::SPEED_FEED_FORWARD_COMMAND +
+            car_config::SPEED_KP * speed_error +
+            car_config::SPEED_KI * speed_integral_,
+        0.0F, car_config::MAX_BASE_MOTOR_COMMAND);
+  }
+
   void follow(const LineReading &line, uint32_t now_ms) {
     constexpr float dt = car_config::CONTROL_PERIOD_US / 1000000.0F;
     const bool reacquired = !line_was_valid_;
@@ -114,7 +177,11 @@ class LineFollower {
 
     // 弯道时主动降速；误差较大时允许内侧轮反转，以通过急弯。
     const float curve = constrain(fabsf(line.error), 0.0F, 1.0F);
-    const float base = car_config::BASE_MOTOR_COMMAND * (1.0F - kCurveSlowdown * curve);
+    if (odometry_updated_) {
+      updateSpeedControl();
+      odometry_updated_ = false;
+    }
+    const float base = speed_command_ * (1.0F - kCurveSlowdown * curve);
     const float left = constrain(base + correction, -1.0F, 1.0F);
     const float right = constrain(base - correction, -1.0F, 1.0F);
     motors_.drive(left, right);
@@ -159,6 +226,7 @@ class LineFollower {
 
   LineSensors sensors_;
   MotorDriver motors_;
+  Encoders encoders_;
   bool ready_ = false;
   bool running_ = false;
   bool line_was_valid_ = false;
@@ -169,6 +237,15 @@ class LineFollower {
   float last_strength_ = 0.0F;
   float left_command_ = 0.0F;
   float right_command_ = 0.0F;
+  float displacement_m_ = 0.0F;
+  float velocity_m_s_ = 0.0F;
+  float speed_integral_ = 0.0F;
+  float speed_command_ = car_config::SPEED_FEED_FORWARD_COMMAND;
+  int32_t last_left_encoder_count_ = 0;
+  int32_t last_right_encoder_count_ = 0;
+  uint32_t last_odometry_ms_ = 0;
+  bool encoder_initialized_ = false;
+  bool odometry_updated_ = false;
   d_task::RouteEvent event_ = d_task::RouteEvent::NONE;
   uint16_t event_id_ = 0;
   uint8_t event_transmissions_remaining_ = 0;

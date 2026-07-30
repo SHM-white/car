@@ -63,8 +63,15 @@ constexpr bool LEFT_ENCODER_INVERTED = false;
 constexpr bool RIGHT_ENCODER_INVERTED = true;
 
 constexpr float WHEEL_DIAMETER_M = 0.065F;
+constexpr float WHEEL_TRACK_M = 0.0652F;
 constexpr int32_t ENCODER_COUNTS_PER_REVOLUTION = 780;
-constexpr float BASE_MOTOR_COMMAND = 0.42F;
+constexpr float TARGET_SPEED_M_S = 0.090F;
+constexpr float SPEED_FEED_FORWARD_COMMAND = 0.21F;
+constexpr float SPEED_KP = 1.20F;
+constexpr float SPEED_KI = 0.80F;
+constexpr float SPEED_INTEGRAL_LIMIT = 0.20F;
+constexpr float MAX_BASE_MOTOR_COMMAND = 0.45F;
+constexpr float BASE_MOTOR_COMMAND = SPEED_FEED_FORWARD_COMMAND;
 constexpr float PID_KP = 0.62F;
 constexpr float PID_KI = 0.03F;
 constexpr float PID_KD = 0.015F;
