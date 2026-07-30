@@ -122,7 +122,9 @@ const char *turnName(d_task::TurnClass turn) {
 
 void formatAge(uint32_t age_ms, uint32_t stale_ms, char *output, size_t capacity) {
   if (age_ms == UINT32_MAX) snprintf(output, capacity, "NO DATA");
-  else if (age_ms > stale_ms) snprintf(output, capacity, "STALE %lums", static_cast<unsigned long>(age_ms));
+  // 远超陈旧阈值后显示 LOST，不再让数字无限增长。
+  else if (age_ms > stale_ms * 8) snprintf(output, capacity, "LOST");
+  else if (age_ms > stale_ms) snprintf(output, capacity, "STALE");
   else snprintf(output, capacity, "%lums", static_cast<unsigned long>(age_ms));
 }
 
@@ -290,7 +292,38 @@ void WaveshareDisplayTouchDriver::createUi() {
   lv_obj_set_style_border_width(track_panel_, 2, 0);
   lv_obj_set_style_border_color(track_panel_, color(kLine), 0);
   textLabel(track_panel_, "TRACK VIEW", 14, 10, 176, &lv_font_montserrat_12, kMuted);
-  track_marker_ = plainPanel(track_panel_, 95, 12, 14, 14, kBlue);
+
+  // 赛道轨迹线：矩形路径，从起点沿底边→右边→顶边→左边回到起点。
+  // 坐标相对于 track_panel_ 内部。
+  {
+    constexpr int tx0 = 22, ty0 = 30;   // 左上角
+    constexpr int tx1 = 182, ty1 = 122; // 右下角
+    static lv_point_t track_pts[] = {
+        {tx0, ty1}, {tx1, ty1}, {tx1, ty0}, {tx0, ty0}, {tx0, ty1},
+    };
+    track_line_ = lv_line_create(track_panel_);
+    lv_line_set_points(track_line_, track_pts, 5);
+    lv_obj_set_style_line_color(track_line_, color(kLine), 0);
+    lv_obj_set_style_line_width(track_line_, 3, 0);
+    lv_obj_set_style_line_rounded(track_line_, true, 0);
+  }
+
+  // 赛道关键路点标记：B、D、A 小圆点 + 标签。
+  // 位置由总长 8000mm、B=1500 D=4000 A=6500 按周长比例计算。
+  constexpr int kDotSize = 8;
+  track_wp_b_ = plainPanel(track_panel_, 109, 118, kDotSize, kDotSize, kAmber);
+  lv_obj_set_style_radius(track_wp_b_, LV_RADIUS_CIRCLE, 0);
+  track_label_b_ = textLabel(track_panel_, "B", 105, 106, 16, &lv_font_montserrat_12, kAmber);
+
+  track_wp_d_ = plainPanel(track_panel_, 178, 26, kDotSize, kDotSize, kAmber);
+  lv_obj_set_style_radius(track_wp_d_, LV_RADIUS_CIRCLE, 0);
+  track_label_d_ = textLabel(track_panel_, "D", 174, 14, 16, &lv_font_montserrat_12, kAmber);
+
+  track_wp_a_ = plainPanel(track_panel_, 19, 26, kDotSize, kDotSize, kAmber);
+  lv_obj_set_style_radius(track_wp_a_, LV_RADIUS_CIRCLE, 0);
+  track_label_a_ = textLabel(track_panel_, "A", 15, 14, 16, &lv_font_montserrat_12, kAmber);
+
+  track_marker_ = plainPanel(track_panel_, 15, 115, 14, 14, kBlue);
   lv_obj_set_style_radius(track_marker_, LV_RADIUS_CIRCLE, 0);
 
   textLabel(screen, "CAR TELEMETRY", 535, 280, 240, &lv_font_montserrat_16, kMuted);
@@ -384,39 +417,65 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   setStatus(ros_status_label_, ros_fresh, (flags & d_task::MISSION_ROS_READY) != 0,
             "READY", "NOT READY");
 
-  // 外框 x/w=12/176, 内框 y/h=36/68, marker 14x14.
-  constexpr int kTrackOuterX = 12;
-  constexpr int kTrackOuterW = 176;
-  constexpr int kTrackOuterMidX = kTrackOuterX + kTrackOuterW / 2;
-  constexpr int kTrackInnerY = 36;
-  constexpr int kTrackInnerH = 68;
-  constexpr int kTrackInnerMidY = kTrackInnerY + kTrackInnerH / 2;
+  // 赛道轨迹视图：总长 8000mm，路点 B=1500 D=4000 A=6500。
+  // 矩形路径坐标（相对于 track_panel_）：
+  //   左上(22,30) → 右上(182,30) → 右下(182,122) → 左下(22,122)
+  // 周长 = 2*(160+92) = 504 像素。
+  // 起点在左下角，顺时针：底边→右边→顶边→左边。
+  constexpr int kTx0 = 22, kTy0 = 30, kTx1 = 182, kTy1 = 122;
+  constexpr int kEdgeBottom = kTx1 - kTx0;  // 160
+  constexpr int kEdgeRight  = kTy1 - kTy0;  // 92
+  constexpr int kEdgeTop    = kTx1 - kTx0;  // 160
+  constexpr int kEdgeLeft   = kTy1 - kTy0;  // 92
+  constexpr int kPerimeter  = kEdgeBottom + kEdgeRight + kEdgeTop + kEdgeLeft; // 504
+  constexpr int kRouteTotalMm = 8000;
+  constexpr int kRouteBMm = 1500;
+  constexpr int kRouteDMm = 4000;
+  constexpr int kRouteAMm = 6500;
   constexpr int kMarkerSize = 14;
-  constexpr int kDisplayLapLengthMm = 12000;
-  const int lap_pos_mm = static_cast<int>(std::abs(static_cast<long>(model.carDisplacementMm())) % kDisplayLapLengthMm);
-  int marker_x = kTrackOuterMidX - kMarkerSize / 2;
-  int marker_y = kTrackInnerMidY - kMarkerSize / 2;
-  if (lap_pos_mm <= kDisplayLapLengthMm / 4) {
-    marker_x = kTrackOuterMidX + static_cast<int>((static_cast<long>(kTrackOuterW / 2 - kMarkerSize / 2) * lap_pos_mm) / (kDisplayLapLengthMm / 4));
-    marker_y = kTrackInnerY;
-  } else if (lap_pos_mm <= kDisplayLapLengthMm / 2) {
-    marker_x = kTrackOuterX + kTrackOuterW - kMarkerSize;
-    marker_y = kTrackInnerMidY + static_cast<int>((static_cast<long>(kTrackInnerH / 2 - kMarkerSize / 2) * (lap_pos_mm - kDisplayLapLengthMm / 4)) / (kDisplayLapLengthMm / 4));
-  } else if (lap_pos_mm <= (kDisplayLapLengthMm * 3) / 4) {
-    marker_x = kTrackOuterMidX - static_cast<int>((static_cast<long>(kTrackOuterW / 2 - kMarkerSize / 2) * (lap_pos_mm - kDisplayLapLengthMm / 2)) / (kDisplayLapLengthMm / 4));
-    marker_y = kTrackInnerY + kTrackInnerH - kMarkerSize;
-  } else {
-    marker_x = kTrackOuterX;
-    marker_y = kTrackInnerMidY - static_cast<int>((static_cast<long>(kTrackInnerH / 2 - kMarkerSize / 2) * (lap_pos_mm - (kDisplayLapLengthMm * 3) / 4)) / (kDisplayLapLengthMm / 4));
-  }
+  constexpr int kHalfMarker = kMarkerSize / 2;
+
+  // 将赛道距离(毫米)映射到矩形路径上的(x,y)像素坐标。
+  auto routeToPixel = [](int dist_mm, int &out_x, int &out_y) {
+    const int clamped = dist_mm < 0 ? 0 : (dist_mm > kRouteTotalMm ? kRouteTotalMm : dist_mm);
+    const long pos = static_cast<long>(clamped) * kPerimeter / kRouteTotalMm;
+    if (pos < kEdgeBottom) {
+      out_x = kTx0 + static_cast<int>(pos);
+      out_y = kTy1;
+    } else if (pos < kEdgeBottom + kEdgeRight) {
+      out_x = kTx1;
+      out_y = kTy1 - static_cast<int>(pos - kEdgeBottom);
+    } else if (pos < kEdgeBottom + kEdgeRight + kEdgeTop) {
+      out_x = kTx1 - static_cast<int>(pos - kEdgeBottom - kEdgeRight);
+      out_y = kTy0;
+    } else {
+      out_x = kTx0;
+      out_y = kTy0 + static_cast<int>(pos - kEdgeBottom - kEdgeRight - kEdgeTop);
+    }
+  };
+
+  const int disp_mm = static_cast<int>(std::abs(static_cast<long>(model.carDisplacementMm())));
+  const int clamped_disp = disp_mm > kRouteTotalMm ? kRouteTotalMm : disp_mm;
+
   if (!car_fresh) {
-    marker_x = kTrackOuterX;
-    marker_y = kTrackInnerMidY - kMarkerSize / 2;
+    int sx, sy; routeToPixel(0, sx, sy);
+    lv_obj_set_pos(track_marker_, sx - kHalfMarker, sy - kHalfMarker);
     lv_obj_set_style_bg_color(track_marker_, color(kMuted), 0);
   } else {
+    int mx, my; routeToPixel(clamped_disp, mx, my);
+    lv_obj_set_pos(track_marker_, mx - kHalfMarker, my - kHalfMarker);
     lv_obj_set_style_bg_color(track_marker_, color(kBlue), 0);
   }
-  lv_obj_set_pos(track_marker_, marker_x, marker_y);
+
+  // 路点颜色：已通过为绿色，未到达为琥珀色。
+  const uint32_t wp_passed = kGreen;
+  const uint32_t wp_pending = kAmber;
+  lv_obj_set_style_bg_color(track_wp_b_, color(disp_mm >= kRouteBMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_bg_color(track_wp_d_, color(disp_mm >= kRouteDMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_bg_color(track_wp_a_, color(disp_mm >= kRouteAMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_text_color(track_label_b_, color(disp_mm >= kRouteBMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_text_color(track_label_d_, color(disp_mm >= kRouteDMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_text_color(track_label_a_, color(disp_mm >= kRouteAMm ? wp_passed : wp_pending), 0);
 
   if (car_fresh) {
     char fixed_value[24];
@@ -453,7 +512,28 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
     lv_label_set_text(fault_label_, "SYSTEM NOMINAL");
   } else {
     lv_obj_set_style_bg_color(fault_bar_, color(kRed), 0);
-    lv_label_set_text_fmt(fault_label_, "FAULT 0x%04X", faults);
+    // 拼接人类可读故障名称，便于快速定位。
+    char buf[96];
+    size_t n = 0;
+    auto append = [&](const char *tag) {
+      if (n > 0 && n < sizeof(buf) - 1) buf[n++] = '/';
+      while (*tag && n < sizeof(buf) - 1) buf[n++] = *tag++;
+    };
+    if (faults & d_task::FAULT_LINE_LOST)               append("LINE");
+    if (faults & d_task::FAULT_WIFI_TIMEOUT)             append("WIFI");
+    if (faults & d_task::FAULT_STALE_DATA)               append("STALE");
+    if (faults & d_task::FAULT_NO_COMMITTED_SELECTION)   append("NO_TASK");
+    if (faults & d_task::FAULT_ENCODER_DISAGREE)         append("ENC");
+    if (faults & d_task::FAULT_MOTOR)                    append("MOTOR");
+    if (faults & d_task::FAULT_PID_OVERRUN)              append("PID");
+    if (faults & d_task::FAULT_BUTTON_STUCK)             append("BTN");
+    if (faults & d_task::FAULT_PROTOCOL)                 append("PROTO");
+    if (faults & d_task::FAULT_BROWNOUT)                 append("BROWNOUT");
+    if (n == 0) { snprintf(buf, sizeof(buf), "0x%04X", faults); n = strlen(buf); }
+    else if (n < sizeof(buf) - 8) { n += snprintf(buf + n, sizeof(buf) - n, " 0x%04X", faults); }
+    if (n >= sizeof(buf)) n = sizeof(buf) - 1;
+    buf[n] = '\0';
+    lv_label_set_text(fault_label_, buf);
   }
   lvgl_port_unlock();
 }

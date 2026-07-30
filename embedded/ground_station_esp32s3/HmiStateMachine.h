@@ -25,11 +25,13 @@ class HmiStateMachine {
       selected_task_ = 0; pending_task_ = 0; selection_id_ = 0;
       selection_committed_ = false; selection_pending_send_ = false;
       ros_prestart_confirmed_ = false; state_ = HmiState::BOOT_WAITING;
-      mission_status_flags_ = 0;
+      mission_status_flags_ = 0; car_event_ = d_task::RouteEvent::NONE; car_event_id_ = 0;
       mission_phase_ = d_task::MissionPhase::PRESTART;
     }
     car_state_ = telemetry.state;
     car_turn_ = telemetry.turn;
+    car_event_ = telemetry.event;
+    car_event_id_ = telemetry.event_id;
     car_displacement_mm_ = telemetry.displacement_mm;
     car_velocity_mm_s_ = telemetry.velocity_mm_s;
     car_line_error_milli_ = telemetry.line_error_milli;
@@ -108,6 +110,8 @@ class HmiStateMachine {
   uint32_t carBootId() const { return car_boot_id_; }
   d_task::CarState carState() const { return car_state_; }
   d_task::TurnClass carTurn() const { return car_turn_; }
+  d_task::RouteEvent carRouteEvent() const { return car_event_; }
+  uint16_t carEventId() const { return car_event_id_; }
   int32_t carDisplacementMm() const { return car_displacement_mm_; }
   int16_t carVelocityMmS() const { return car_velocity_mm_s_; }
   int16_t carLineErrorMilli() const { return car_line_error_milli_; }
@@ -126,12 +130,14 @@ class HmiStateMachine {
   HmiState state_ = HmiState::BOOT_WAITING;
   d_task::CarState car_state_ = d_task::CarState::READY;
   d_task::TurnClass car_turn_ = d_task::TurnClass::STRAIGHT;
+  d_task::RouteEvent car_event_ = d_task::RouteEvent::NONE;
   d_task::MissionPhase mission_phase_ = d_task::MissionPhase::PRESTART;
   uint32_t local_boot_id_ = 0;
   uint32_t car_boot_id_ = 0;
   uint32_t selection_id_ = 0;
   uint8_t pending_task_ = 0;
   uint8_t selected_task_ = 0;
+  uint16_t car_event_id_ = 0;
   uint16_t fault_flags_ = 0;
   uint16_t transient_faults_ = 0;
   uint16_t car_faults_ = 0;
