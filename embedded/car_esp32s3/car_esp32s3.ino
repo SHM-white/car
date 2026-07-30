@@ -1,10 +1,10 @@
 #include <Arduino.h>
 #include <esp_system.h>
 
-#include "LineFollower.h"
+#include "CarController.h"
 #include "UdpTelemetry.h"
 
-LineFollower line_follower;
+CarController car;
 UdpTelemetry udp_telemetry;
 
 uint32_t next_telemetry_ms = 0;
@@ -41,11 +41,13 @@ void navigationPrintTask(uint32_t now_ms) {
   if (static_cast<int32_t>(now_ms - next_print_ms) < 0) return;
   next_print_ms = now_ms + kNavigationPrintPeriodMs;
 
-  const LineFollower::NavigationData data = line_follower.navigationData();
-  Serial.printf("[导航] state=%s turn=%s line=%s error=%+.3f strength=%.3f left=%+.2f right=%+.2f\n",
-                carStateName(data.state), turnName(data.turn),
-                data.line_valid ? "VALID" : "LOST", data.line_error,
-                data.line_strength, data.left_command, data.right_command);
+  const d_task::CarTelemetry t = car.telemetry(udp_telemetry.connected());
+  Serial.printf("[导航] state=%s turn=%s event=%u disp=%ldmm vel=%dmm/s fault=0x%04x\n",
+                carStateName(t.state), turnName(t.turn),
+                static_cast<unsigned>(t.event),
+                static_cast<long>(t.displacement_mm),
+                static_cast<int>(t.velocity_mm_s),
+                t.fault_flags);
 }
 
 void rosConnectionPrintTask(uint32_t now_ms) {
@@ -79,7 +81,7 @@ void setup() {
   }
   const uint32_t now = millis();
   udp_telemetry.begin(now);
-  line_follower.begin(now);
+  car.begin(now);
   next_telemetry_ms = now;
   next_heartbeat_ms = now;
   initialized = true;
@@ -93,13 +95,13 @@ void loop() {
 
   const uint32_t now = millis();
   udp_telemetry.update(now);
-  line_follower.update(now, micros());
+  car.update(now, micros(), udp_telemetry.connected());
 
   if (static_cast<int32_t>(now - next_telemetry_ms) >= 0) {
     next_telemetry_ms = now + d_task::kCarTelemetryPeriodMs;
-    const d_task::CarTelemetry telemetry = line_follower.telemetry(udp_telemetry.connected());
+    const d_task::CarTelemetry telemetry = car.telemetry(udp_telemetry.connected());
     if (udp_telemetry.sendTelemetry(telemetry, now)) {
-      line_follower.noteTelemetryTransmitted();
+      car.noteTelemetryTransmitted();
     }
   }
 
