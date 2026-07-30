@@ -9,7 +9,7 @@
 车辆固件负责：
 
 - 使用感为八路灰度传感器识别赛道中心。
-- 以 200 Hz PID 控制左右轮差速循迹。
+- 以 200 Hz PID 控制左右轮差速循迹，并以编码器 PI 闭环将平均线速度保持在目标值。
 - 使用双轮编码器计算累计位移和滤波速度。
 - 根据行驶距离依次产生 `START`、`B`、`D`、`A` 和 `COMPLETE` 事件。
 - 每 50 ms 向 ROS 和 HMI 发送遥测，每 1 秒发送心跳。
@@ -32,6 +32,8 @@
 | 左编码器 A / B | GPIO12 / GPIO13 |
 | 右编码器 A / B | GPIO14 / GPIO15 |
 | 启动按钮 | GPIO16，低电平有效 |
+
+TB6612FNG 的左电机接 `AO1/AO2`，并将 `PWMA/AIN1/AIN2` 分别接到 GPIO6/GPIO7/GPIO8；右电机接 `BO1/BO2`，并将 `PWMB/BIN1/BIN2` 分别接到 GPIO9/GPIO10/GPIO11。`AO1` 和 `BO1` 是电机输出端，不应直接连接到 ESP32 GPIO。
 
 ### 2.2 灰度传感器接线
 
@@ -69,7 +71,7 @@ ESP32-S3 GPIO2 -> 电平转换器 LV-SCL
 4. 固件为 V3.6 以上时使用 `0xCF` 开启八通道归一化。
 5. 使用 `0xCE` 启用全部通道，再通过 `0xB0` 读取八路模拟量。
 
-手册正视图中的探头从左到右编号为 8～1，而 I2C 数据按通道 1～8 返回。默认配置会自动反转顺序，使 PID 数组保持从车体左侧到右侧排列。
+本车安装在车头前端，车头朝前观察时探头从左到右编号为 1～8，且 I2C 数据同样按通道 1～8 返回。因此默认配置不反转顺序，使 PID 数组保持从车体左侧到右侧排列。
 
 ## 3. 传感器安装与校准
 
@@ -127,13 +129,17 @@ Copy-Item .\embedded\car_esp32s3\config_local.example.h `
 ### 5.2 车辆参数
 
 - `LINE_SENSOR_SDA_PIN`、`LINE_SENSOR_SCL_PIN`：I2C 引脚。
-- `LINE_SENSOR_CHANNELS_REVERSED`：传感器安装方向相反时改为 `false`。
+- `LINE_SENSOR_CHANNELS_REVERSED`：传感器安装方向相反时改为 `true`。
+- `LINE_SENSOR_CENTER_OFFSET_CHANNELS`：传感器中心相对车体中心的横向偏移，单位为探头间距；传感器装在车体右侧时填写正值。
 - `LINE_IS_DARK`：黑线设为 `true`，白线设为 `false`。
 - 电机和编码器 GPIO：必须与驱动板接线一致。
 - `MOTOR_BRAKE_HIGH`：必须符合电机驱动器的制动逻辑。
 - `LEFT_ENCODER_INVERTED`、`RIGHT_ENCODER_INVERTED`：用于校正编码器正方向。
 - `WHEEL_DIAMETER_M`、`ENCODER_COUNTS_PER_REVOLUTION`：用于里程换算。
-- `BASE_MOTOR_COMMAND` 和 PID 参数：必须在架空和低速条件下逐步标定。
+- `WHEEL_TRACK_M`：左右轮中心距离，用于差速运动学计算。
+- `TARGET_SPEED_M_S`：目标平均线速度，默认 `0.0425 m/s`（4.25 cm/s）。
+- `SPEED_FEED_FORWARD_COMMAND`、`SPEED_KP`、`SPEED_KI`：编码器速度闭环参数，应在低速条件下标定。
+- `PID_KP`、`PID_KI`、`PID_KD`：黑线横向误差的转向参数。
 - `ROUTE_B_M`、`ROUTE_D_M`、`ROUTE_A_M`、`ROUTE_COMPLETE_M`：必须按实际赛道重新测量。
 
 ## 6. 编译与烧录
@@ -163,7 +169,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 `
 
 ## 7. 自主黑线循迹模式
 
-当前 `car_esp32s3.ino` 直接运行自主循迹控制，不再创建 UART 测试任务，也不等待 Wi-Fi、编码器或启动按钮。传感器识别到黑线后使用 PID 计算左右轮差速；弯道会自动降速，急弯时允许内侧轮反转。短暂丢线时车辆按最后看到黑线的方向找线，350 ms 内仍未找回则制动。
+当前 `car_esp32s3.ino` 直接运行自主循迹控制，不再创建 UART 测试任务，也不等待 Wi-Fi 或启动按钮。传感器识别到黑线后使用 PID 计算左右轮差速，并用编码器 PI 闭环保持目标平均速度。常规循迹不允许内侧轮反转。短暂丢线时车辆按最后看到黑线的方向找线，350 ms 内仍未找回则制动。
 
 串口每 200 ms 输出一次循迹状态：
 
@@ -201,7 +207,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 `
 2. 确认黑线偏向传感器右侧时左轮加速、右轮减速；方向相反则切换 `LINE_SENSOR_CHANNELS_REVERSED`。
 3. 确认左右轮都以正方向行驶，再将小车放到低速测试赛道。
 4. 复位后有 1.5 秒准备时间，随后识别到黑线即自动行驶。
-5. 根据实车振荡和过弯情况逐步调整 `BASE_MOTOR_COMMAND`、`PID_KP`、`PID_KI` 和 `PID_KD`。
+5. 先确认 `speed` 接近 `target`，再根据实车振荡和过弯情况逐步调整 `SPEED_FEED_FORWARD_COMMAND`、`SPEED_KP`、`SPEED_KI`、`PID_KP`、`PID_KI` 和 `PID_KD`。
 
 ### 8.3 路线事件
 
