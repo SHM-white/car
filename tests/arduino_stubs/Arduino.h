@@ -17,6 +17,14 @@
 #define PI 3.14159265358979323846F
 
 using String = std::string;
+using BaseType_t = int;
+using UBaseType_t = unsigned int;
+using TickType_t = uint32_t;
+using TaskHandle_t = void *;
+using TaskFunction_t = void (*)(void *);
+
+constexpr BaseType_t pdPASS = 1;
+#define pdMS_TO_TICKS(milliseconds) (static_cast<TickType_t>(milliseconds))
 
 template <typename T>
 T constrain(T value, T minimum, T maximum) {
@@ -48,4 +56,7 @@ inline int digitalPinToInterrupt(uint8_t pin) { return pin; }
 inline void attachInterrupt(int, void (*)(), int) {}
 inline bool ledcAttach(uint8_t, uint32_t, uint8_t) { return true; }
 inline bool ledcWrite(uint8_t, uint32_t) { return true; }
-
+inline TickType_t xTaskGetTickCount() { return 0; }
+inline void vTaskDelayUntil(TickType_t *, TickType_t) {}
+inline BaseType_t xTaskCreate(TaskFunction_t, const char *, uint32_t, void *,
+                              UBaseType_t, TaskHandle_t *) { return pdPASS; }

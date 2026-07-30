@@ -16,6 +16,12 @@ struct LineReading {
   bool valid;
 };
 
+struct LineSensorFrame {
+  uint8_t channels[car_config::LINE_SENSOR_COUNT];  // I2C 原始顺序：通道 1~8。
+  LineReading line;
+  uint8_t address;
+};
+
 class LineSensors {
  public:
   bool begin() {
@@ -24,12 +30,20 @@ class LineSensors {
       Serial.println("[循迹] I2C 控制器初始化失败");
       return false;
     }
-    Wire.setTimeOut(car_config::LINE_SENSOR_I2C_TIMEOUT_MS);
+    Wire.setTimeOut(50);  // 默认 50ms，传感器 STOP 后需要较长恢复时间
 
+    // 传感器上电后需稳定时间，手册 ping 示例也强调需等待设备就绪。
+    // 同时给电平转换器两侧上拉电阻足够的建立时间。
+    delay(100);
+
+    Serial.println("[循迹] 扫描传感器...");
+    scan_debug_ = 0;
     for (uint8_t attempt = 0; attempt < car_config::LINE_SENSOR_STARTUP_ATTEMPTS && address_ == 0; ++attempt) {
       for (uint8_t address = car_config::LINE_SENSOR_I2C_ADDRESS_FIRST;
            address <= car_config::LINE_SENSOR_I2C_ADDRESS_LAST; ++address) {
-        if (probe(address) && ping(address)) { address_ = address; break; }
+        bool probe_ok = probe(address);
+        if (scan_debug_++ < 4) Serial.printf("  [扫描] #%u addr=0x%02X probe=%s\n", attempt + 1, address, probe_ok ? "ACK" : "NACK");
+        if (probe_ok) { delay(5); if (ping(address)) { address_ = address; break; } }
       }
       if (address_ == 0) delay(car_config::LINE_SENSOR_STARTUP_RETRY_MS);
     }
@@ -51,7 +65,7 @@ class LineSensors {
       Serial.println("[循迹] 八通道归一化配置失败");
       return false;
     }
-    if (!writeCommand(kCommandChannelEnable, 0xFF) || !selectCommand(kCommandContinuousAnalog)) {
+    if (!writeCommand(kCommandChannelEnable, 0xFF)) {
       Serial.println("[循迹] 八通道连续模拟量模式配置失败");
       return false;
     }
@@ -63,12 +77,26 @@ class LineSensors {
   }
 
   LineReading read() {
-    uint8_t raw[car_config::LINE_SENSOR_COUNT];
-    // 每帧重发 0xB0，使传感器复位或上次读取中断后仍从第 1 路重新对齐。
-    if (!ready_ || !readCommand(kCommandContinuousAnalog, raw, sizeof(raw))) {
-      return {0.0F, 0.0F, false};
-    }
+    LineSensorFrame frame{};
+    return readFrame(frame) ? frame.line : LineReading{0.0F, 0.0F, false};
+  }
 
+  bool readFrame(LineSensorFrame &frame) {
+    uint8_t raw[car_config::LINE_SENSOR_COUNT];
+    frame.address = address_;
+    // 手册方法1：发 0xB0 → Repeated START → 读 8 字节，每帧一次完整事务。
+    if (!ready_ || !readCommand(kCommandContinuousAnalog, raw, sizeof(raw))) {
+      for (size_t i = 0; i < car_config::LINE_SENSOR_COUNT; ++i) frame.channels[i] = 0;
+      frame.line = {0.0F, 0.0F, false};
+      return false;
+    }
+    for (size_t i = 0; i < car_config::LINE_SENSOR_COUNT; ++i) frame.channels[i] = raw[i];
+    frame.line = calculateLine(raw);
+    return true;
+  }
+
+ private:
+  static LineReading calculateLine(const uint8_t raw[car_config::LINE_SENSOR_COUNT]) {
     float weighted_sum = 0.0F;
     float strength_sum = 0.0F;
     constexpr size_t count = car_config::LINE_SENSOR_COUNT;
@@ -86,7 +114,6 @@ class LineSensors {
             average_strength, average_strength >= car_config::MIN_LINE_STRENGTH};
   }
 
- private:
   static constexpr uint8_t kCommandContinuousAnalog = 0xB0;
   static constexpr uint8_t kCommandChannelEnable = 0xCE;
   static constexpr uint8_t kCommandNormalization = 0xCF;
@@ -107,12 +134,17 @@ class LineSensors {
     return readCommandAt(address_, command, output, length);
   }
 
-  static bool readCommandAt(uint8_t address, uint8_t command, uint8_t *output, size_t length) {
+  bool readCommandAt(uint8_t address, uint8_t command, uint8_t *output, size_t length) {
     Wire.beginTransmission(address);
     Wire.write(command);
-    if (Wire.endTransmission(false) != 0) return false;
+    uint8_t endErr = Wire.endTransmission(false);       // 手册方法1：不发送 STOP，由 Repeated START 衔接读操作
+    if (endErr != 0) {
+      if (scan_debug_++ < 2) Serial.printf("  [DBG] endTrans err=%u cmd=0x%02X\n", endErr, command);
+      return false;
+    }
     const size_t received = Wire.requestFrom(address, length, true);
     if (received != length) {
+      if (scan_debug_++ < 2) Serial.printf("  [DBG] requestFrom got=%u want=%u cmd=0x%02X\n", received, length, command);
       while (Wire.available() > 0) Wire.read();
       return false;
     }
@@ -130,15 +162,10 @@ class LineSensors {
     return Wire.endTransmission(true) == 0;
   }
 
-  bool selectCommand(uint8_t command) {
-    Wire.beginTransmission(address_);
-    Wire.write(command);
-    return Wire.endTransmission(true) == 0;
-  }
-
   uint8_t address_ = 0;
   bool ready_ = false;
   bool normalization_enabled_ = false;
+  uint8_t scan_debug_ = 0;
 };
 
 class MotorDriver {
