@@ -42,6 +42,12 @@ class UdpTelemetry {
 
   bool sendHeartbeat(uint32_t now_ms) { return send(d_task::MessageType::HEARTBEAT, nullptr, 0, now_ms); }
   bool connected() const { return WiFi.status() == WL_CONNECTED && udp_started_; }
+  bool rosFresh(uint32_t now_ms, uint32_t stale_ms) const {
+    return peer_has_received_ && now_ms - last_peer_packet_ms_ <= stale_ms;
+  }
+  uint32_t rosAge(uint32_t now_ms) const {
+    return peer_has_received_ ? now_ms - last_peer_packet_ms_ : UINT32_MAX;
+  }
   uint32_t bootId() const { return boot_id_; }
   uint32_t rejectedPackets() const { return rejected_packets_; }
 
@@ -91,10 +97,11 @@ class UdpTelemetry {
       peer_boot_id_ = header.boot_id;
       peer_sequence_.beginSession(header.sender_id, header.boot_id);
       peer_session_valid_ = true;
-      Serial.printf("[网络] 已绑定 ROS 新会话 boot=%08lX\n", static_cast<unsigned long>(peer_boot_id_));
+      peer_has_received_ = false;
     }
     if (!peer_sequence_.accept(header.sender_id, header.boot_id, header.sequence)) { ++rejected_packets_; return; }
     last_peer_packet_ms_ = now_ms;
+    peer_has_received_ = true;
   }
 
   void drainPacket() { while (udp_.available() > 0) udp_.read(); }
@@ -109,4 +116,5 @@ class UdpTelemetry {
   uint32_t rejected_packets_ = 0;
   bool udp_started_ = false;
   bool peer_session_valid_ = false;
+  bool peer_has_received_ = false;
 };
