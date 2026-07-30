@@ -4,4 +4,5 @@
 **/*.elf
 **/*.map
 tests/protocol_tests.exe
+*.exe
 
