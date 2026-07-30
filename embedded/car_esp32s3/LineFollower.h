@@ -60,6 +60,8 @@ class LineFollower {
       event_ = d_task::RouteEvent::START;
       ++event_id_;
       event_transmissions_remaining_ = car_config::EVENT_REPEAT_FRAMES;
+      start_announced_ = false;  // 通知主循环立即发送 START 遥测
+      Serial.printf("[启动] 小车进入运行状态 event_id=%u\n", event_id_);
     }
     updateOdometry(now_ms);
     if (static_cast<int32_t>(now_us - next_control_us_) < 0) return;
@@ -110,6 +112,12 @@ class LineFollower {
   void noteTelemetryTransmitted() {
     if (event_ == d_task::RouteEvent::NONE || event_transmissions_remaining_ == 0) return;
     if (--event_transmissions_remaining_ == 0) event_ = d_task::RouteEvent::NONE;
+  }
+
+  bool consumeStartAnnouncement() {
+    if (start_announced_) return false;
+    start_announced_ = true;
+    return true;
   }
 
  private:
@@ -246,6 +254,7 @@ class LineFollower {
   uint32_t last_odometry_ms_ = 0;
   bool encoder_initialized_ = false;
   bool odometry_updated_ = false;
+  bool start_announced_ = true;  // begin() 时尚未启动，设为 true 避免误触发
   d_task::RouteEvent event_ = d_task::RouteEvent::NONE;
   uint16_t event_id_ = 0;
   uint8_t event_transmissions_remaining_ = 0;

@@ -98,6 +98,17 @@ void loop() {
   udp_telemetry.update(now);
   line_follower.update(now, micros());
 
+  // 小车刚进入运行状态时，立即发送 START 遥测到地面站和机载主机（不等下一个50ms周期）
+  if (line_follower.consumeStartAnnouncement()) {
+    const d_task::CarTelemetry start_telemetry = line_follower.telemetry(udp_telemetry.connected());
+    if (udp_telemetry.sendTelemetry(start_telemetry, now)) {
+      line_follower.noteTelemetryTransmitted();
+      Serial.printf("[启动] START 遥测已立即发送 (event_id=%u)\n", start_telemetry.event_id);
+    } else {
+      Serial.println("[启动] START 遥测发送失败 (WiFi未连接?)");
+    }
+  }
+
   if (static_cast<int32_t>(now - next_telemetry_ms) >= 0) {
     next_telemetry_ms = now + d_task::kCarTelemetryPeriodMs;
     const d_task::CarTelemetry telemetry = line_follower.telemetry(udp_telemetry.connected());
