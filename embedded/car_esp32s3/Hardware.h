@@ -9,8 +9,6 @@ static_assert(car_config::LINE_SENSOR_COUNT == 8, "感为灰度传感器必须�
 static_assert(car_config::LINE_SENSOR_I2C_ADDRESS_FIRST <= car_config::LINE_SENSOR_I2C_ADDRESS_LAST,
               "循迹传感器 I2C 地址范围无效");
 static_assert(car_config::ENCODER_COUNTS_PER_REVOLUTION > 0, "编码器每圈计数必须为正数");
-static_assert(car_config::WHEEL_TRACK_M > 0.0F, "轮距必须为正数");
-static_assert(car_config::TARGET_SPEED_M_S > 0.0F, "目标速度必须为正数");
 
 struct LineReading {
   float error;
@@ -63,11 +61,12 @@ class LineSensors {
     const uint8_t firmware_minor = firmware & 0x0F;
     normalization_enabled_ = car_config::LINE_SENSOR_ENABLE_NORMALIZATION &&
                              (firmware_major > 3 || (firmware_major == 3 && firmware_minor >= 6));
-    if (normalization_enabled_ &&
-        !writeAndVerifyRegister(kCommandNormalization, 0xFF, "归一化")) {
+    if (normalization_enabled_ && !writeCommand(kCommandNormalization, 0xFF)) {
+      Serial.println("[循迹] 八通道归一化配置失败");
       return false;
     }
-    if (!writeAndVerifyRegister(kCommandChannelEnable, 0xFF, "通道使能")) {
+    if (!writeCommand(kCommandChannelEnable, 0xFF)) {
+      Serial.println("[循迹] 八通道连续模拟量模式配置失败");
       return false;
     }
 
@@ -103,18 +102,16 @@ class LineSensors {
     constexpr size_t count = car_config::LINE_SENSOR_COUNT;
     for (size_t i = 0; i < count; ++i) {
       const size_t channel = car_config::LINE_SENSOR_CHANNELS_REVERSED ? count - 1 - i : i;
-      const float value = lineStrength(raw[channel]);
+      float value = raw[channel] / 255.0F;
+      // 手册规定模拟量白色趋近 255、黑色趋近 0。
+      if (car_config::LINE_IS_DARK) value = 1.0F - value;
       const float position = count > 1 ? (2.0F * static_cast<float>(i) / (count - 1)) - 1.0F : 0.0F;
       weighted_sum += position * value;
       strength_sum += value;
     }
     const float average_strength = strength_sum / count;
-    const float raw_error = strength_sum > 0.001F ? weighted_sum / strength_sum : 0.0F;
-    const float channels_per_error = (count - 1) * 0.5F;
-    const float center_compensation =
-        car_config::LINE_SENSOR_CENTER_OFFSET_CHANNELS / channels_per_error;
-    return {constrain(raw_error + center_compensation, -1.0F, 1.0F), average_strength,
-            average_strength >= car_config::MIN_LINE_STRENGTH};
+    return {strength_sum > 0.001F ? weighted_sum / strength_sum : 0.0F,
+            average_strength, average_strength >= car_config::MIN_LINE_STRENGTH};
   }
 
   static constexpr uint8_t kCommandContinuousAnalog = 0xB0;
@@ -122,12 +119,6 @@ class LineSensors {
   static constexpr uint8_t kCommandNormalization = 0xCF;
   static constexpr uint8_t kCommandPing = 0xAA;
   static constexpr uint8_t kCommandFirmware = 0xC1;
-
-  // 手册规定归一化模拟量：白色=255、黑色=0。控制器需要“线越明显值越大”。
-  static float lineStrength(uint8_t raw) {
-    const float normalized = raw / 255.0F;
-    return car_config::LINE_IS_DARK ? 1.0F - normalized : normalized;
-  }
 
   static bool probe(uint8_t address) {
     Wire.beginTransmission(address);
@@ -171,20 +162,6 @@ class LineSensors {
     return Wire.endTransmission(true) == 0;
   }
 
-  bool writeAndVerifyRegister(uint8_t command, uint8_t value, const char *name) {
-    if (!writeCommand(command, value)) {
-      Serial.printf("[循迹] %s寄存器写入失败\n", name);
-      return false;
-    }
-    uint8_t actual = 0;
-    if (!readCommand(command, &actual, 1) || actual != value) {
-      Serial.printf("[循迹] %s寄存器校验失败，期望=0x%02X，实际=0x%02X\n",
-                    name, value, actual);
-      return false;
-    }
-    return true;
-  }
-
   uint8_t address_ = 0;
   bool ready_ = false;
   bool normalization_enabled_ = false;
@@ -203,12 +180,8 @@ class MotorDriver {
   }
 
   void drive(float left, float right) {
-    if (car_config::LEFT_MOTOR_INVERTED) left = -left;
-    if (car_config::RIGHT_MOTOR_INVERTED) right = -right;
-    setOne(car_config::LEFT_MOTOR_PWM_PIN, car_config::LEFT_MOTOR_IN1_PIN,
-           car_config::LEFT_MOTOR_IN2_PIN, left);
-    setOne(car_config::RIGHT_MOTOR_PWM_PIN, car_config::RIGHT_MOTOR_IN1_PIN,
-           car_config::RIGHT_MOTOR_IN2_PIN, right);
+    setOne(car_config::LEFT_MOTOR_PWM_PIN, car_config::LEFT_MOTOR_IN1_PIN, car_config::LEFT_MOTOR_IN2_PIN, left);
+    setOne(car_config::RIGHT_MOTOR_PWM_PIN, car_config::RIGHT_MOTOR_IN1_PIN, car_config::RIGHT_MOTOR_IN2_PIN, right);
   }
 
   void brake() {

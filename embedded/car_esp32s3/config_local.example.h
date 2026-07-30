@@ -38,10 +38,8 @@ constexpr uint8_t LINE_SENSOR_I2C_ADDRESS_LAST = 0x4F;
 constexpr uint8_t LINE_SENSOR_STARTUP_ATTEMPTS = 50;
 constexpr uint32_t LINE_SENSOR_STARTUP_RETRY_MS = 10;
 constexpr uint8_t LINE_SENSOR_COUNT = 8;
-// 实车车头朝前时：左侧为 ch1，右侧为 ch8；I2C 0xB0 顺序无需反转。
-constexpr bool LINE_SENSOR_CHANNELS_REVERSED = false;
-// 传感器中心相对车体中心的横向偏移，单位为通道间距；右偏为正，初始为 0。
-constexpr float LINE_SENSOR_CENTER_OFFSET_CHANNELS = 0.0F;
+// 手册正视图从左到右标为 8~1，而 I2C 0xB0 按 1~8 返回。
+constexpr bool LINE_SENSOR_CHANNELS_REVERSED = true;
 constexpr bool LINE_SENSOR_ENABLE_NORMALIZATION = true;
 constexpr bool LINE_IS_DARK = true;
 
@@ -51,10 +49,6 @@ constexpr uint8_t LEFT_MOTOR_IN2_PIN = 8;
 constexpr uint8_t RIGHT_MOTOR_PWM_PIN = 9;
 constexpr uint8_t RIGHT_MOTOR_IN1_PIN = 10;
 constexpr uint8_t RIGHT_MOTOR_IN2_PIN = 11;
-// TB6612FNG: 左轮接 A 通道（AO1/AO2），右轮接 B 通道（BO1/BO2）。
-// 架空测试中某侧正向反转时，仅将对应项改为 true。
-constexpr bool LEFT_MOTOR_INVERTED = false;
-constexpr bool RIGHT_MOTOR_INVERTED = false;
 constexpr uint8_t LEFT_ENCODER_A_PIN = 12;
 constexpr uint8_t LEFT_ENCODER_B_PIN = 13;
 constexpr uint8_t RIGHT_ENCODER_A_PIN = 14;
@@ -69,24 +63,12 @@ constexpr bool LEFT_ENCODER_INVERTED = false;
 constexpr bool RIGHT_ENCODER_INVERTED = true;
 
 constexpr float WHEEL_DIAMETER_M = 0.065F;
-constexpr float WHEEL_TRACK_M = 0.0652F;
 constexpr int32_t ENCODER_COUNTS_PER_REVOLUTION = 780;
-// 编码器闭环目标平均线速度,单位 m/s；实际速度由速度 PI 自动修正。
-constexpr float TARGET_SPEED_M_S = 0.078F;
-// 实车初始估计值；速度 PI 会根据编码器读数自动修正。
-constexpr float SPEED_FEED_FORWARD_COMMAND = 0.21F;
-// 保留给未启用的 CarController 入口使用；自主循迹使用速度闭环。
-constexpr float BASE_MOTOR_COMMAND = SPEED_FEED_FORWARD_COMMAND;
-constexpr float SPEED_KP = 1.20F;
-constexpr float SPEED_KI = 0.80F;
-constexpr float SPEED_INTEGRAL_LIMIT = 0.20F;
-constexpr float MAX_BASE_MOTOR_COMMAND = 0.45F;
-// 保守起步参数：最大左右轮差速为 2 * MAX_STEERING_CORRECTION。
-constexpr float PID_KP = 0.32F;
+constexpr float BASE_MOTOR_COMMAND = 0.42F;
+constexpr float PID_KP = 0.62F;
 constexpr float PID_KI = 0.03F;
 constexpr float PID_KD = 0.015F;
 constexpr float PID_INTEGRAL_LIMIT = 0.35F;
-constexpr float MAX_STEERING_CORRECTION = 0.20F;
 constexpr float SMALL_TURN_ENTER = 0.18F;
 constexpr float SMALL_TURN_EXIT = 0.12F;
 constexpr float LARGE_TURN_ENTER = 0.48F;
