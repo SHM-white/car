@@ -24,6 +24,7 @@ class WaveshareDisplayTouchDriver {
  private:
   static void task1Event(lv_event_t *event);
   static void task2Event(lv_event_t *event);
+  static void testTaskEvent(lv_event_t *event);
   static void confirmEvent(lv_event_t *event);
   static void cancelEvent(lv_event_t *event);
 
@@ -41,9 +42,12 @@ class WaveshareDisplayTouchDriver {
   lv_obj_t *link_label_ = nullptr;
   lv_obj_t *selected_task_label_ = nullptr;
   lv_obj_t *pending_task_label_ = nullptr;
+  lv_obj_t *car_link_status_label_ = nullptr;
   lv_obj_t *drone_status_label_ = nullptr;
   lv_obj_t *vision_status_label_ = nullptr;
   lv_obj_t *ros_status_label_ = nullptr;
+  lv_obj_t *track_panel_ = nullptr;
+  lv_obj_t *track_marker_ = nullptr;
   lv_obj_t *car_state_label_ = nullptr;
   lv_obj_t *turn_label_ = nullptr;
   lv_obj_t *displacement_label_ = nullptr;
@@ -55,8 +59,10 @@ class WaveshareDisplayTouchDriver {
   lv_obj_t *fps_label_ = nullptr;
   lv_obj_t *task1_button_ = nullptr;
   lv_obj_t *task2_button_ = nullptr;
+  lv_obj_t *test_task_button_ = nullptr;
   lv_obj_t *confirm_overlay_ = nullptr;
   lv_obj_t *confirm_prompt_ = nullptr;
+  bool local_test_mode_ = false;
   uint32_t fps_sample_ms_ = 0;
   uint32_t fps_sample_vsync_ = 0;
 };

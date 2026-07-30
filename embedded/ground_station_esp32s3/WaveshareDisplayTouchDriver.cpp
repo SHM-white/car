@@ -2,6 +2,7 @@
 
 #if !HMI_USE_SERIAL_DISPLAY
 
+#include <cstdlib>
 #include <new>
 #include <stdio.h>
 
@@ -218,6 +219,11 @@ void WaveshareDisplayTouchDriver::task2Event(lv_event_t *event) {
   static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::TASK_2);
 }
 
+void WaveshareDisplayTouchDriver::testTaskEvent(lv_event_t *event) {
+  auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
+  driver->local_test_mode_ = !driver->local_test_mode_;
+}
+
 void WaveshareDisplayTouchDriver::confirmEvent(lv_event_t *event) {
   static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event))->queueAction(TouchAction::CONFIRM);
 }
@@ -240,11 +246,12 @@ void WaveshareDisplayTouchDriver::createUi() {
 
   lv_obj_t *left = plainPanel(screen, 0, 56, 255, 374, 0xFFFFFF);
   textLabel(left, "TASK CONTROL", 24, 20, 210, &lv_font_montserrat_16, kMuted);
-  task1_button_ = commandButton(left, "TASK 1", 24, 56, 207, 58, task1Event, this);
-  task2_button_ = commandButton(left, "TASK 2", 24, 128, 207, 58, task2Event, this);
-  textLabel(left, "ROS CONFIRMED", 24, 222, 207, &lv_font_montserrat_16, kMuted);
-  selected_task_label_ = textLabel(left, "--", 24, 248, 207, &lv_font_montserrat_30, kText);
-  pending_task_label_ = textLabel(left, "PENDING --", 24, 302, 207, &lv_font_montserrat_16, kAmber);
+  task1_button_ = commandButton(left, "TASK 1", 24, 56, 207, 48, task1Event, this);
+  task2_button_ = commandButton(left, "TASK 2", 24, 114, 207, 48, task2Event, this);
+  test_task_button_ = commandButton(left, "TEST", 24, 172, 207, 48, testTaskEvent, this);
+  textLabel(left, "ROS CONFIRMED", 24, 232, 207, &lv_font_montserrat_16, kMuted);
+  selected_task_label_ = textLabel(left, "--", 24, 258, 207, &lv_font_montserrat_30, kText);
+  pending_task_label_ = textLabel(left, "PENDING --", 24, 312, 207, &lv_font_montserrat_16, kAmber);
 
   plainPanel(screen, 254, 56, 1, 374, kLine);
   lv_obj_t *mission = plainPanel(screen, 255, 56, 545, 72, 0xE7EFF5);
@@ -258,20 +265,30 @@ void WaveshareDisplayTouchDriver::createUi() {
   lv_obj_set_style_text_align(mission_label_, LV_TEXT_ALIGN_RIGHT, 0);
 
   textLabel(screen, "SYSTEM STATUS", 279, 146, 210, &lv_font_montserrat_16, kMuted);
-  textLabel(screen, "DRONE LINK", 279, 183, 130, &lv_font_montserrat_16, kText);
-  drone_status_label_ = textLabel(screen, "NO DATA", 412, 183, 100, &lv_font_montserrat_16, kRed);
-  textLabel(screen, "VISION", 279, 221, 130, &lv_font_montserrat_16, kText);
-  vision_status_label_ = textLabel(screen, "NO DATA", 412, 221, 100, &lv_font_montserrat_16, kRed);
-  textLabel(screen, "ROS READY", 279, 259, 130, &lv_font_montserrat_16, kText);
-  ros_status_label_ = textLabel(screen, "NO DATA", 412, 259, 100, &lv_font_montserrat_16, kRed);
+  textLabel(screen, "CAR LINK", 279, 183, 110, &lv_font_montserrat_16, kText);
+  car_link_status_label_ = textLabel(screen, "NO DATA", 402, 183, 110, &lv_font_montserrat_16, kRed);
+  textLabel(screen, "DRONE LINK", 279, 211, 110, &lv_font_montserrat_16, kText);
+  drone_status_label_ = textLabel(screen, "NO DATA", 402, 211, 110, &lv_font_montserrat_16, kRed);
+  textLabel(screen, "VISION", 279, 251, 110, &lv_font_montserrat_16, kText);
+  vision_status_label_ = textLabel(screen, "NO DATA", 402, 251, 110, &lv_font_montserrat_16, kRed);
+  textLabel(screen, "ROS READY", 279, 287, 110, &lv_font_montserrat_16, kText);
+  ros_status_label_ = textLabel(screen, "NO DATA", 402, 287, 110, &lv_font_montserrat_16, kRed);
 
-  textLabel(screen, "CAR TELEMETRY", 535, 146, 240, &lv_font_montserrat_16, kMuted);
-  car_state_label_ = textLabel(screen, "STATE  NO DATA", 535, 183, 240, &lv_font_montserrat_16, kText);
-  turn_label_ = textLabel(screen, "TURN   NO DATA", 535, 218, 240, &lv_font_montserrat_16, kText);
-  displacement_label_ = textLabel(screen, "DIST   --", 535, 253, 240, &lv_font_montserrat_16, kText);
-  velocity_label_ = textLabel(screen, "SPEED  --", 535, 288, 240, &lv_font_montserrat_16, kText);
-  line_error_label_ = textLabel(screen, "LINE   --", 535, 323, 240, &lv_font_montserrat_16, kText);
-  quality_label_ = textLabel(screen, "QUALITY 0x0000", 535, 358, 240, &lv_font_montserrat_16, kText);
+  track_panel_ = plainPanel(screen, 558, 134, 204, 140, 0xFFFFFF);
+  lv_obj_set_style_radius(track_panel_, 16, 0);
+  lv_obj_set_style_border_width(track_panel_, 2, 0);
+  lv_obj_set_style_border_color(track_panel_, color(kLine), 0);
+  textLabel(track_panel_, "TRACK VIEW", 14, 10, 176, &lv_font_montserrat_12, kMuted);
+  track_marker_ = plainPanel(track_panel_, 95, 12, 14, 14, kBlue);
+  lv_obj_set_style_radius(track_marker_, LV_RADIUS_CIRCLE, 0);
+
+  textLabel(screen, "CAR TELEMETRY", 535, 280, 240, &lv_font_montserrat_16, kMuted);
+  car_state_label_ = textLabel(screen, "STATE  NO DATA", 535, 308, 240, &lv_font_montserrat_16, kText);
+  turn_label_ = textLabel(screen, "TURN   NO DATA", 535, 336, 240, &lv_font_montserrat_16, kText);
+  displacement_label_ = textLabel(screen, "DIST   --", 535, 360, 240, &lv_font_montserrat_16, kText);
+  velocity_label_ = textLabel(screen, "SPEED  --", 535, 380, 240, &lv_font_montserrat_16, kText);
+  line_error_label_ = textLabel(screen, "LINE   --", 535, 396, 240, &lv_font_montserrat_16, kText);
+  quality_label_ = textLabel(screen, "QUALITY 0x0000", 535, 410, 240, &lv_font_montserrat_16, kText);
 
   fault_bar_ = plainPanel(screen, 0, 430, 800, 50, kGreen);
   fps_label_ = textLabel(fault_bar_, "FPS --", 12, 18, 68,
@@ -316,17 +333,29 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   lv_label_set_text(state_label_, hmiStateName(model.state()));
   lv_label_set_text(mission_label_, missionPhaseName(model.missionPhase()));
 
-  if (model.selectedTask() == 0) lv_label_set_text(selected_task_label_, "--");
-  else lv_label_set_text_fmt(selected_task_label_, "TASK %u", model.selectedTask());
-  if (model.pendingTask() == 0) lv_label_set_text(pending_task_label_, "PENDING --");
-  else lv_label_set_text_fmt(pending_task_label_, "PENDING TASK %u", model.pendingTask());
+  if (local_test_mode_) {
+    if (model.selectedTask() == 0) lv_label_set_text(selected_task_label_, "LOCAL");
+    else lv_label_set_text_fmt(selected_task_label_, "TASK %u / LOCAL", model.selectedTask());
+    if (model.pendingTask() == 0) lv_label_set_text(pending_task_label_, "PENDING TEST");
+    else lv_label_set_text_fmt(pending_task_label_, "PENDING TASK %u / TEST", model.pendingTask());
+  } else {
+    if (model.selectedTask() == 0) lv_label_set_text(selected_task_label_, "--");
+    else lv_label_set_text_fmt(selected_task_label_, "TASK %u", model.selectedTask());
+    if (model.pendingTask() == 0) lv_label_set_text(pending_task_label_, "PENDING --");
+    else lv_label_set_text_fmt(pending_task_label_, "PENDING TASK %u", model.pendingTask());
+  }
 
   if (model.pendingTask() == 1) lv_obj_add_state(task1_button_, LV_STATE_CHECKED);
   else lv_obj_clear_state(task1_button_, LV_STATE_CHECKED);
   if (model.pendingTask() == 2) lv_obj_add_state(task2_button_, LV_STATE_CHECKED);
   else lv_obj_clear_state(task2_button_, LV_STATE_CHECKED);
+  if (local_test_mode_) lv_obj_add_state(test_task_button_, LV_STATE_CHECKED);
+  else lv_obj_clear_state(test_task_button_, LV_STATE_CHECKED);
 
-  if (model.confirmationVisible()) {
+  if (local_test_mode_) {
+    lv_label_set_text(confirm_prompt_, "LOCAL TEST TASK");
+    lv_obj_clear_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
+  } else if (model.confirmationVisible()) {
     lv_label_set_text_fmt(confirm_prompt_, "CONFIRM TASK %u?", model.pendingTask());
     lv_obj_clear_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
   } else {
@@ -336,12 +365,47 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   const bool car_fresh = car_age_ms != UINT32_MAX && car_age_ms <= d_task::kTelemetryStaleMs;
   const bool ros_fresh = ros_age_ms != UINT32_MAX && ros_age_ms <= hmi_config::ROS_STATUS_STALE_MS;
   const uint16_t flags = model.missionStatusFlags();
+  setStatus(car_link_status_label_, true, car_fresh, "ONLINE", "OFFLINE");
   setStatus(drone_status_label_, ros_fresh, (flags & d_task::MISSION_DRONE_LINK_OK) != 0,
             (flags & d_task::MISSION_DRONE_ARMED) != 0 ? "ARMED" : "ONLINE", "OFFLINE");
   setStatus(vision_status_label_, ros_fresh, (flags & d_task::MISSION_VISION_VALID) != 0,
             "VALID", "INVALID");
   setStatus(ros_status_label_, ros_fresh, (flags & d_task::MISSION_ROS_READY) != 0,
             "READY", "NOT READY");
+
+  // 外框 x/w=12/176, 内框 y/h=36/68, marker 14x14.
+  constexpr int kTrackOuterX = 12;
+  constexpr int kTrackOuterW = 176;
+  constexpr int kTrackOuterMidX = kTrackOuterX + kTrackOuterW / 2;
+  constexpr int kTrackInnerY = 36;
+  constexpr int kTrackInnerH = 68;
+  constexpr int kTrackInnerMidY = kTrackInnerY + kTrackInnerH / 2;
+  constexpr int kMarkerSize = 14;
+  constexpr int kDisplayLapLengthMm = 12000;
+  const int lap_pos_mm = static_cast<int>(std::abs(static_cast<long>(model.carDisplacementMm())) % kDisplayLapLengthMm);
+  int marker_x = kTrackOuterMidX - kMarkerSize / 2;
+  int marker_y = kTrackInnerMidY - kMarkerSize / 2;
+  if (lap_pos_mm <= kDisplayLapLengthMm / 4) {
+    marker_x = kTrackOuterMidX + static_cast<int>((static_cast<long>(kTrackOuterW / 2 - kMarkerSize / 2) * lap_pos_mm) / (kDisplayLapLengthMm / 4));
+    marker_y = kTrackInnerY;
+  } else if (lap_pos_mm <= kDisplayLapLengthMm / 2) {
+    marker_x = kTrackOuterX + kTrackOuterW - kMarkerSize;
+    marker_y = kTrackInnerMidY + static_cast<int>((static_cast<long>(kTrackInnerH / 2 - kMarkerSize / 2) * (lap_pos_mm - kDisplayLapLengthMm / 4)) / (kDisplayLapLengthMm / 4));
+  } else if (lap_pos_mm <= (kDisplayLapLengthMm * 3) / 4) {
+    marker_x = kTrackOuterMidX - static_cast<int>((static_cast<long>(kTrackOuterW / 2 - kMarkerSize / 2) * (lap_pos_mm - kDisplayLapLengthMm / 2)) / (kDisplayLapLengthMm / 4));
+    marker_y = kTrackInnerY + kTrackInnerH - kMarkerSize;
+  } else {
+    marker_x = kTrackOuterX;
+    marker_y = kTrackInnerMidY - static_cast<int>((static_cast<long>(kTrackInnerH / 2 - kMarkerSize / 2) * (lap_pos_mm - (kDisplayLapLengthMm * 3) / 4)) / (kDisplayLapLengthMm / 4));
+  }
+  if (!car_fresh) {
+    marker_x = kTrackOuterX;
+    marker_y = kTrackInnerMidY - kMarkerSize / 2;
+    lv_obj_set_style_bg_color(track_marker_, color(kMuted), 0);
+  } else {
+    lv_obj_set_style_bg_color(track_marker_, color(kBlue), 0);
+  }
+  lv_obj_set_pos(track_marker_, marker_x, marker_y);
 
   if (car_fresh) {
     char fixed_value[24];
