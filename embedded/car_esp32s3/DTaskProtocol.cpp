@@ -210,12 +210,12 @@ bool decodeCarTelemetry(const uint8_t *p, size_t length, CarTelemetry &m) {
 }
 
 size_t encodeTaskSelection(const TaskSelection &m, uint8_t *out, size_t capacity) {
-  if (out == nullptr || capacity < 9 || m.task < 1 || m.task > 2) return 0;
+  if (out == nullptr || capacity < 9 || m.task < 1 || m.task > 3) return 0;
   put32(out, m.selection_id); put32(out + 4, m.car_boot_id); out[8] = m.task; return 9;
 }
 
 bool decodeTaskSelection(const uint8_t *p, size_t length, TaskSelection &m) {
-  if (p == nullptr || length != 9 || p[8] < 1 || p[8] > 2) return false;
+  if (p == nullptr || length != 9 || p[8] < 1 || p[8] > 3) return false;
   m.selection_id = get32(p); m.car_boot_id = get32(p + 4); m.task = p[8]; return true;
 }
 
@@ -230,7 +230,7 @@ bool decodeMissionStatus(const uint8_t *p, size_t length, MissionStatus &m) {
   constexpr uint16_t kKnownStatusFlags = MISSION_DRONE_LINK_OK | MISSION_DRONE_ARMED |
                                          MISSION_VISION_VALID | MISSION_ROS_READY;
   if (p == nullptr || length != 18 || p[12] > static_cast<uint8_t>(MissionPhase::FAULT) ||
-      p[13] > 2 || (get16(p + 16) & ~kKnownStatusFlags) != 0) return false;
+      p[13] > 3 || (get16(p + 16) & ~kKnownStatusFlags) != 0) return false;
   m.selection_id = get32(p); m.car_boot_id = get32(p + 4); m.hmi_boot_id = get32(p + 8);
   m.phase = static_cast<MissionPhase>(p[12]); m.selected_task = p[13];
   m.reason_flags = get16(p + 14); m.status_flags = get16(p + 16); return true;
