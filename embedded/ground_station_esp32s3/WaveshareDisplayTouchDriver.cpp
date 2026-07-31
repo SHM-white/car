@@ -2,6 +2,7 @@
 
 #if !HMI_USE_SERIAL_DISPLAY
 
+#include <cmath>
 #include <cstdlib>
 #include <new>
 #include <stdio.h>
@@ -293,37 +294,46 @@ void WaveshareDisplayTouchDriver::createUi() {
   lv_obj_set_style_border_color(track_panel_, color(kLine), 0);
   textLabel(track_panel_, "TRACK VIEW", 14, 10, 176, &lv_font_montserrat_12, kMuted);
 
-  // 赛道轨迹线：矩形路径，从起点沿底边→右边→顶边→左边回到起点。
-  // 坐标相对于 track_panel_ 内部。
+  // 赛道为竖向圆角矩形：AB、DC 均为 150 cm 直边，上下圆弧半径 75 cm。
+  // 图中 A→B→C→D→A 为顺时针方向。
   {
-    constexpr int tx0 = 22, ty0 = 30;   // 左上角
-    constexpr int tx1 = 182, ty1 = 122; // 右下角
+    constexpr int cx = 102, radius = 23;
+    constexpr int y_top = 30, y_upper = 53, y_lower = 99, y_bottom = 122;
     static lv_point_t track_pts[] = {
-        {tx0, ty1}, {tx1, ty1}, {tx1, ty0}, {tx0, ty0}, {tx0, ty1},
+        {cx - radius, y_lower}, {cx - radius, y_upper},
+        {81, 44}, {86, 36}, {94, 32}, {102, y_top},
+        {110, 32}, {118, 36}, {123, 44},
+        {cx + radius, y_upper}, {cx + radius, y_lower},
+        {123, 108}, {118, 116}, {110, 120}, {102, y_bottom},
+        {94, 120}, {86, 116}, {81, 108},
+        {cx - radius, y_lower},
     };
     track_line_ = lv_line_create(track_panel_);
-    lv_line_set_points(track_line_, track_pts, 5);
+    lv_line_set_points(track_line_, track_pts, sizeof(track_pts) / sizeof(track_pts[0]));
     lv_obj_set_style_line_color(track_line_, color(kLine), 0);
     lv_obj_set_style_line_width(track_line_, 3, 0);
     lv_obj_set_style_line_rounded(track_line_, true, 0);
   }
 
-  // 赛道关键路点标记：B、D、A 小圆点 + 标签。
-  // 位置由总长 8000mm、B=1500 D=4000 A=6500 按周长比例计算。
+  // 关键点位与题图一致：A 左下、B 左上、C 右上、D 右下。
   constexpr int kDotSize = 8;
-  track_wp_b_ = plainPanel(track_panel_, 109, 118, kDotSize, kDotSize, kAmber);
+  track_wp_b_ = plainPanel(track_panel_, 75, 49, kDotSize, kDotSize, kAmber);
   lv_obj_set_style_radius(track_wp_b_, LV_RADIUS_CIRCLE, 0);
-  track_label_b_ = textLabel(track_panel_, "B", 105, 106, 16, &lv_font_montserrat_12, kAmber);
+  track_label_b_ = textLabel(track_panel_, "B", 62, 45, 16, &lv_font_montserrat_12, kAmber);
 
-  track_wp_d_ = plainPanel(track_panel_, 178, 26, kDotSize, kDotSize, kAmber);
+  track_wp_c_ = plainPanel(track_panel_, 121, 49, kDotSize, kDotSize, kAmber);
+  lv_obj_set_style_radius(track_wp_c_, LV_RADIUS_CIRCLE, 0);
+  track_label_c_ = textLabel(track_panel_, "C", 130, 45, 16, &lv_font_montserrat_12, kAmber);
+
+  track_wp_d_ = plainPanel(track_panel_, 121, 95, kDotSize, kDotSize, kAmber);
   lv_obj_set_style_radius(track_wp_d_, LV_RADIUS_CIRCLE, 0);
-  track_label_d_ = textLabel(track_panel_, "D", 174, 14, 16, &lv_font_montserrat_12, kAmber);
+  track_label_d_ = textLabel(track_panel_, "D", 130, 91, 16, &lv_font_montserrat_12, kAmber);
 
-  track_wp_a_ = plainPanel(track_panel_, 19, 26, kDotSize, kDotSize, kAmber);
+  track_wp_a_ = plainPanel(track_panel_, 75, 95, kDotSize, kDotSize, kAmber);
   lv_obj_set_style_radius(track_wp_a_, LV_RADIUS_CIRCLE, 0);
-  track_label_a_ = textLabel(track_panel_, "A", 15, 14, 16, &lv_font_montserrat_12, kAmber);
+  track_label_a_ = textLabel(track_panel_, "A", 62, 91, 16, &lv_font_montserrat_12, kAmber);
 
-  track_marker_ = plainPanel(track_panel_, 15, 115, 14, 14, kBlue);
+  track_marker_ = plainPanel(track_panel_, 72, 92, 14, 14, kBlue);
   lv_obj_set_style_radius(track_marker_, LV_RADIUS_CIRCLE, 0);
 
   textLabel(screen, "CAR TELEMETRY", 535, 280, 240, &lv_font_montserrat_16, kMuted);
@@ -417,40 +427,40 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   setStatus(ros_status_label_, ros_fresh, (flags & d_task::MISSION_ROS_READY) != 0,
             "READY", "NOT READY");
 
-  // 赛道轨迹视图：总长 8000mm，路点 B=1500 D=4000 A=6500。
-  // 矩形路径坐标（相对于 track_panel_）：
-  //   左上(22,30) → 右上(182,30) → 右下(182,122) → 左下(22,122)
-  // 周长 = 2*(160+92) = 504 像素。
-  // 起点在左下角，顺时针：底边→右边→顶边→左边。
-  constexpr int kTx0 = 22, kTy0 = 30, kTx1 = 182, kTy1 = 122;
-  constexpr int kEdgeBottom = kTx1 - kTx0;  // 160
-  constexpr int kEdgeRight  = kTy1 - kTy0;  // 92
-  constexpr int kEdgeTop    = kTx1 - kTx0;  // 160
-  constexpr int kEdgeLeft   = kTy1 - kTy0;  // 92
-  constexpr int kPerimeter  = kEdgeBottom + kEdgeRight + kEdgeTop + kEdgeLeft; // 504
-  constexpr int kRouteTotalMm = 8000;
+  // 物理赛道：AB=DC=1500 mm，两个半圆的半径均为 750 mm。
+  // A 为起点，顺时针依次经过 B、C、D，最终回到 A。
+  constexpr float kPi = 3.14159265f;
+  constexpr int kStraightMm = 1500;
+  constexpr int kRadiusMm = 750;
+  constexpr int kArcMm = static_cast<int>(kPi * kRadiusMm + 0.5f);
+  constexpr int kRouteTotalMm = 2 * kStraightMm + 2 * kArcMm;
   constexpr int kRouteBMm = 1500;
-  constexpr int kRouteDMm = 4000;
-  constexpr int kRouteAMm = 6500;
+  constexpr int kRouteCMm = kRouteBMm + kArcMm;
+  constexpr int kRouteDMm = kRouteCMm + kStraightMm;
   constexpr int kMarkerSize = 14;
   constexpr int kHalfMarker = kMarkerSize / 2;
+  constexpr float kCx = 102.0f, kPixelRadius = 23.0f;
+  constexpr float kUpperY = 53.0f, kLowerY = 99.0f;
 
-  // 将赛道距离(毫米)映射到矩形路径上的(x,y)像素坐标。
+  // 将赛道距离映射到两条直边和两个半圆弧。
   auto routeToPixel = [](int dist_mm, int &out_x, int &out_y) {
     const int clamped = dist_mm < 0 ? 0 : (dist_mm > kRouteTotalMm ? kRouteTotalMm : dist_mm);
-    const long pos = static_cast<long>(clamped) * kPerimeter / kRouteTotalMm;
-    if (pos < kEdgeBottom) {
-      out_x = kTx0 + static_cast<int>(pos);
-      out_y = kTy1;
-    } else if (pos < kEdgeBottom + kEdgeRight) {
-      out_x = kTx1;
-      out_y = kTy1 - static_cast<int>(pos - kEdgeBottom);
-    } else if (pos < kEdgeBottom + kEdgeRight + kEdgeTop) {
-      out_x = kTx1 - static_cast<int>(pos - kEdgeBottom - kEdgeRight);
-      out_y = kTy0;
+    if (clamped <= kRouteBMm) {
+      const float t = static_cast<float>(clamped) / kStraightMm;
+      out_x = static_cast<int>(kCx - kPixelRadius);
+      out_y = static_cast<int>(kLowerY + (kUpperY - kLowerY) * t);
+    } else if (clamped <= kRouteCMm) {
+      const float angle = kPi - kPi * static_cast<float>(clamped - kRouteBMm) / kArcMm;
+      out_x = static_cast<int>(kCx + kPixelRadius * std::cos(angle));
+      out_y = static_cast<int>(kUpperY - kPixelRadius * std::sin(angle));
+    } else if (clamped <= kRouteDMm) {
+      const float t = static_cast<float>(clamped - kRouteCMm) / kStraightMm;
+      out_x = static_cast<int>(kCx + kPixelRadius);
+      out_y = static_cast<int>(kUpperY + (kLowerY - kUpperY) * t);
     } else {
-      out_x = kTx0;
-      out_y = kTy0 + static_cast<int>(pos - kEdgeBottom - kEdgeRight - kEdgeTop);
+      const float angle = kPi * static_cast<float>(clamped - kRouteDMm) / kArcMm;
+      out_x = static_cast<int>(kCx + kPixelRadius * std::cos(angle));
+      out_y = static_cast<int>(kLowerY + kPixelRadius * std::sin(angle));
     }
   };
 
@@ -471,11 +481,13 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   const uint32_t wp_passed = kGreen;
   const uint32_t wp_pending = kAmber;
   lv_obj_set_style_bg_color(track_wp_b_, color(disp_mm >= kRouteBMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_bg_color(track_wp_c_, color(disp_mm >= kRouteCMm ? wp_passed : wp_pending), 0);
   lv_obj_set_style_bg_color(track_wp_d_, color(disp_mm >= kRouteDMm ? wp_passed : wp_pending), 0);
-  lv_obj_set_style_bg_color(track_wp_a_, color(disp_mm >= kRouteAMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_bg_color(track_wp_a_, color(disp_mm >= kRouteTotalMm ? wp_passed : wp_pending), 0);
   lv_obj_set_style_text_color(track_label_b_, color(disp_mm >= kRouteBMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_text_color(track_label_c_, color(disp_mm >= kRouteCMm ? wp_passed : wp_pending), 0);
   lv_obj_set_style_text_color(track_label_d_, color(disp_mm >= kRouteDMm ? wp_passed : wp_pending), 0);
-  lv_obj_set_style_text_color(track_label_a_, color(disp_mm >= kRouteAMm ? wp_passed : wp_pending), 0);
+  lv_obj_set_style_text_color(track_label_a_, color(disp_mm >= kRouteTotalMm ? wp_passed : wp_pending), 0);
 
   if (car_fresh) {
     char fixed_value[24];

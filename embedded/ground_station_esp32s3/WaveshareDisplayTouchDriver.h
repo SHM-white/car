@@ -50,9 +50,11 @@ class WaveshareDisplayTouchDriver {
   lv_obj_t *track_line_ = nullptr;
   lv_obj_t *track_marker_ = nullptr;
   lv_obj_t *track_wp_b_ = nullptr;
+  lv_obj_t *track_wp_c_ = nullptr;
   lv_obj_t *track_wp_d_ = nullptr;
   lv_obj_t *track_wp_a_ = nullptr;
   lv_obj_t *track_label_b_ = nullptr;
+  lv_obj_t *track_label_c_ = nullptr;
   lv_obj_t *track_label_d_ = nullptr;
   lv_obj_t *track_label_a_ = nullptr;
   lv_obj_t *car_state_label_ = nullptr;
