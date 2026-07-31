@@ -229,6 +229,11 @@ void WaveshareDisplayTouchDriver::task2Event(lv_event_t *event) {
 void WaveshareDisplayTouchDriver::testTaskEvent(lv_event_t *event) {
   auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
   driver->local_test_mode_ = !driver->local_test_mode_;
+  if (driver->local_test_mode_) {
+    driver->queueAction(TouchAction::TASK_TEST);
+  } else {
+    driver->queueAction(TouchAction::CANCEL);
+  }
 }
 
 void WaveshareDisplayTouchDriver::confirmEvent(lv_event_t *event) {

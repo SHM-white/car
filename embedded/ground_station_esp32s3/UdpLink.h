@@ -23,7 +23,10 @@ class UdpLink {
  public:
   void begin(uint32_t now_ms) {
     boot_id_ = esp_random(); if (boot_id_ == 0) boot_id_ = 1;
-    WiFi.mode(WIFI_STA); WiFi.setAutoReconnect(true); connect(now_ms);
+    WiFi.mode(WIFI_STA);
+    // 关闭 modem sleep：低周期链路判定依赖稳定低延迟发包，省电模式会缓冲/延迟 UDP 帧
+    WiFi.setSleep(false);
+    WiFi.setAutoReconnect(true); connect(now_ms);
   }
 
   void update(uint32_t now_ms) {

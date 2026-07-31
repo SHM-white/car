@@ -6,6 +6,7 @@
 namespace car_config {
 
 // 必须在烧录前替换；真实口令和密钥只放在未纳入版本控制的 config_local.h。
+// 生产密钥应与 config/hmac.key.hex 保持一致（三端共用同一密钥）。
 constexpr char WIFI_SSID[] = "REPLACE_WITH_OFFLINE_AP";
 constexpr char WIFI_PASSWORD[] = "REPLACE_WITH_WPA2_PASSWORD";
 constexpr uint8_t AUTH_KEY[] = {

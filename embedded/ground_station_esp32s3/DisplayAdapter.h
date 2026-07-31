@@ -5,7 +5,7 @@
 #include "Config.h"
 #include "HmiStateMachine.h"
 
-enum class TouchAction : uint8_t { NONE = 0, TASK_1, TASK_2, CONFIRM, CANCEL };
+enum class TouchAction : uint8_t { NONE = 0, TASK_1, TASK_2, TASK_TEST, CONFIRM, CANCEL };
 
 // 串口适配器只用于主机回归测试；实机默认启用微雪 7 英寸触屏驱动。
 class SerialDisplayTouchDriver {
@@ -20,6 +20,7 @@ class SerialDisplayTouchDriver {
     switch (Serial.read()) {
       case '1': return TouchAction::TASK_1;
       case '2': return TouchAction::TASK_2;
+      case 't': case 'T': return TouchAction::TASK_TEST;
       case 'c': case 'C': return TouchAction::CONFIRM;
       case 'x': case 'X': return TouchAction::CANCEL;
       default: return TouchAction::NONE;

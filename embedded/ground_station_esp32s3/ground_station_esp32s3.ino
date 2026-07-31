@@ -42,6 +42,7 @@ void loop() {
   switch (display.poll()) {
     case TouchAction::TASK_1: hmi.chooseTask(1); break;
     case TouchAction::TASK_2: hmi.chooseTask(2); break;
+    case TouchAction::TASK_TEST: hmi.chooseTask(3); break;
     case TouchAction::CONFIRM:
       if (hmi.confirmChoice(esp_random())) next_selection_send_ms = now;
       break;
@@ -55,7 +56,9 @@ void loop() {
     next_selection_send_ms = now + hmi_config::SELECTION_RETRY_MS;
   }
   if (static_cast<int32_t>(now - next_heartbeat_ms) >= 0) {
-    next_heartbeat_ms = now + 1000;
+    // 心跳周期 250ms（HEARTBEAT_PERIOD_MS）：链路新鲜窗口 750ms，周期若接近窗口
+    // 会周期性误报 ROS 链路陈旧（FAULT_STALE_DATA）
+    next_heartbeat_ms = now + hmi_config::HEARTBEAT_PERIOD_MS;
     udp_link.sendHeartbeat(now);
   }
   if (static_cast<int32_t>(now - next_render_ms) >= 0) {

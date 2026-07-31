@@ -87,7 +87,7 @@ class HmiStateMachine {
   }
 
   bool chooseTask(uint8_t task) {
-    if (task != 1 && task != 2) return false;
+    if (task < 1 || task > 3) return false;
     pending_task_ = task; confirmation_visible_ = true; return true;
   }
 

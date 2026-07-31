@@ -28,5 +28,7 @@ constexpr uint32_t CAR_SENDER_ID = 0x43415231;  // "CAR1"
 constexpr uint32_t WIFI_RETRY_PERIOD_MS = 2000;
 constexpr uint32_t ROS_STATUS_STALE_MS = 750;
 constexpr uint32_t SELECTION_RETRY_MS = 250;
+// 心跳周期必须明显小于 ROS_STATUS_STALE_MS(750)，否则 ROS 链路会被周期性误判为陈旧
+constexpr uint32_t HEARTBEAT_PERIOD_MS = 250;
 
 }  // namespace hmi_config
