@@ -4,7 +4,9 @@
 #include <DTaskProtocol.h>
 
 #include "Config.h"
+#include "FinishLineStop.h"
 #include "Hardware.h"
+#include "LineSteering.h"
 
 class LineFollower {
  public:
@@ -45,6 +47,10 @@ class LineFollower {
 
   void update(uint32_t now_ms, uint32_t now_us) {
     if (!ready_) return;
+    if (completed_) {
+      motors_.brake();
+      return;
+    }
     if (static_cast<int32_t>(now_ms - start_ms_) < 0) {
       motors_.brake();
       return;
@@ -55,6 +61,8 @@ class LineFollower {
       last_odometry_ms_ = now_ms;
       displacement_m_ = 0.0F;
       velocity_m_s_ = 0.0F;
+      completed_ = false;
+      finish_line_stop_.reset();
       speed_integral_ = 0.0F;
       speed_command_ = car_config::SPEED_FEED_FORWARD_COMMAND;
       event_ = d_task::RouteEvent::START;
@@ -68,9 +76,21 @@ class LineFollower {
     next_control_us_ = now_us + car_config::CONTROL_PERIOD_US;
 
     LineSensorFrame frame{};
-    if (sensors_.readFrame(frame) && frame.line.valid) {
+    const bool frame_read = sensors_.readFrame(frame);
+    if (frame_read) {
+      for (size_t i = 0; i < car_config::LINE_SENSOR_COUNT; ++i) {
+        last_line_channels_[i] = frame.channels[i];
+      }
+    }
+    if (frame_read && frame.line.valid) {
+      const bool all_channels_black = LineSensors::allChannelsOnLine(frame.channels);
+      if (finish_line_stop_.update(displacement_m_, all_channels_black, now_ms)) {
+        complete();
+        return;
+      }
       follow(frame.line, now_ms);
     } else {
+      finish_line_stop_.update(displacement_m_, false, now_ms);
       recoverOrStop(now_ms);
     }
   }
@@ -78,6 +98,7 @@ class LineFollower {
   NavigationData navigationData() const {
     d_task::CarState state = d_task::CarState::READY;
     if (fault_flags_ != d_task::FAULT_NONE) state = d_task::CarState::SAFE_STOP;
+    else if (completed_) state = d_task::CarState::COMPLETE;
     else if (running_) state = d_task::CarState::RUNNING;
 
     const float magnitude = fabsf(last_error_);
@@ -120,7 +141,28 @@ class LineFollower {
     return true;
   }
 
+  void lineChannels(uint8_t channels[car_config::LINE_SENSOR_COUNT]) const {
+    for (size_t i = 0; i < car_config::LINE_SENSOR_COUNT; ++i) {
+      channels[i] = last_line_channels_[i];
+    }
+  }
+
  private:
+  void complete() {
+    if (completed_) return;
+    completed_ = true;
+    running_ = false;
+    velocity_m_s_ = 0.0F;
+    left_command_ = 0.0F;
+    right_command_ = 0.0F;
+    motors_.brake();
+    event_ = d_task::RouteEvent::COMPLETE;
+    ++event_id_;
+    event_transmissions_remaining_ = car_config::EVENT_REPEAT_FRAMES;
+    Serial.printf("[finish] finish line passed by %.2f m; car stopped (event_id=%u)\n",
+                  car_config::FINISH_LINE_RUNOUT_M, event_id_);
+  }
+
   void updateOdometry(uint32_t now_ms) {
     if (now_ms - last_odometry_ms_ < car_config::ENCODER_PERIOD_MS) return;
 
@@ -163,38 +205,22 @@ class LineFollower {
   }
 
   void follow(const LineReading &line, uint32_t now_ms) {
-    constexpr float dt = car_config::CONTROL_PERIOD_US / 1000000.0F;
-    const bool reacquired = !line_was_valid_;
-    if (reacquired) {
-      previous_error_ = line.error;
-      derivative_ = 0.0F;
-      integral_ = 0.0F;
-    }
-
-    integral_ = constrain(integral_ + line.error * dt,
-                          -car_config::PID_INTEGRAL_LIMIT,
-                          car_config::PID_INTEGRAL_LIMIT);
-    const float raw_derivative = (line.error - previous_error_) / dt;
-    derivative_ += kDerivativeFilterAlpha * (raw_derivative - derivative_);
-    previous_error_ = line.error;
-
-    float correction = car_config::PID_KP * line.error +
-                       car_config::PID_KI * integral_ +
-                       car_config::PID_KD * derivative_;
-    correction = constrain(correction, -kMaximumCorrection, kMaximumCorrection);
-
-    // 弯道时主动降速；误差较大时允许内侧轮反转，以通过急弯。
-    const float curve = constrain(fabsf(line.error), 0.0F, 1.0F);
     if (odometry_updated_) {
       updateSpeedControl();
       odometry_updated_ = false;
     }
-    const float base = speed_command_ * (1.0F - kCurveSlowdown * curve);
-    const float left = constrain(base + correction, -1.0F, 1.0F);
-    const float right = constrain(base - correction, -1.0F, 1.0F);
+    const bool reacquired = !line_was_valid_;
+    if (reacquired) steering_.reset(line.error);
+    const LineSteering::Output steering = steering_.update(line.error);
+
+    // 偏离中心时同时提高比例增益并降速，让转向量相对前进速度足够大。
+    const float base = speed_command_ * steering.base_speed_ratio;
+    float left = constrain(base + steering.correction, -1.0F, 1.0F);
+    float right = constrain(base - steering.correction, -1.0F, 1.0F);
+    MotorDriver::limitCommandDifference(left, right);
     motors_.drive(left, right);
 
-    last_error_ = line.error;
+    last_error_ = steering.error;
     last_strength_ = line.strength;
     left_command_ = left;
     right_command_ = right;
@@ -203,17 +229,17 @@ class LineFollower {
   }
 
   void recoverOrStop(uint32_t now_ms) {
-    integral_ = 0.0F;
-    derivative_ = 0.0F;
+    steering_.clear();
     line_was_valid_ = false;
     last_strength_ = 0.0F;
 
     const bool recently_seen = last_line_ms_ != 0 && now_ms - last_line_ms_ <= kRecoveryTimeMs;
     if (recently_seen && fabsf(last_error_) >= kRecoveryErrorThreshold) {
-      // 按最后一次看到黑线的方向原地找线，适合传感器短暂越过急弯。
+      // 按最后一次看到黑线的方向找线，最终差速仍受电机入口硬限制。
       const float direction = last_error_ > 0.0F ? 1.0F : -1.0F;
       left_command_ = direction * kRecoveryOuterSpeed;
       right_command_ = -direction * kRecoveryInnerSpeed;
+      MotorDriver::limitCommandDifference(left_command_, right_command_);
       motors_.drive(left_command_, right_command_);
       return;
     }
@@ -225,9 +251,6 @@ class LineFollower {
 
   static constexpr uint32_t kStartupDelayMs = 1500;
   static constexpr uint32_t kRecoveryTimeMs = 350;
-  static constexpr float kCurveSlowdown = 0.45F;
-  static constexpr float kMaximumCorrection = 0.65F;
-  static constexpr float kDerivativeFilterAlpha = 0.20F;
   static constexpr float kRecoveryErrorThreshold = 0.08F;
   static constexpr float kRecoveryOuterSpeed = 0.28F;
   static constexpr float kRecoveryInnerSpeed = 0.18F;
@@ -235,12 +258,12 @@ class LineFollower {
   LineSensors sensors_;
   MotorDriver motors_;
   Encoders encoders_;
+  FinishLineStop finish_line_stop_;
+  LineSteering steering_;
   bool ready_ = false;
   bool running_ = false;
+  bool completed_ = false;
   bool line_was_valid_ = false;
-  float integral_ = 0.0F;
-  float derivative_ = 0.0F;
-  float previous_error_ = 0.0F;
   float last_error_ = 0.0F;
   float last_strength_ = 0.0F;
   float left_command_ = 0.0F;
@@ -249,6 +272,7 @@ class LineFollower {
   float velocity_m_s_ = 0.0F;
   float speed_integral_ = 0.0F;
   float speed_command_ = car_config::SPEED_FEED_FORWARD_COMMAND;
+  uint8_t last_line_channels_[car_config::LINE_SENSOR_COUNT] = {};
   int32_t last_left_encoder_count_ = 0;
   int32_t last_right_encoder_count_ = 0;
   uint32_t last_odometry_ms_ = 0;

@@ -2,7 +2,7 @@
 
 本说明适用于 `embedded/car_esp32s3` 中的车辆固件。当前入口驱动感为八路 I2C 灰度传感器和两路直流电机，并通过 Wi-Fi/UDP 向 ROS 与地面站发送车辆状态。
 
-> 当前 `car_esp32s3.ino` 使用自主循迹与 Wi-Fi/UDP 集成入口；上电后自动循迹，并向 ROS 和地面站发送当前循迹状态、编码器位移和速度。该入口暂不产生 B/D/A/COMPLETE 路线事件。
+> 当前 `car_esp32s3.ino` 使用自主循迹与 Wi-Fi/UDP 集成入口；上电后自动循迹，并向 ROS 和地面站发送当前循迹状态、编码器位移和速度。该入口产生 `START` 事件，并在识别终点线、续行 10 cm 后产生 `COMPLETE` 事件。
 
 ## 1. 功能范围
 
@@ -133,7 +133,14 @@ Copy-Item .\embedded\car_esp32s3\config_local.example.h `
 - `LEFT_ENCODER_INVERTED`、`RIGHT_ENCODER_INVERTED`：用于校正编码器正方向。
 - `WHEEL_DIAMETER_M`、`ENCODER_COUNTS_PER_REVOLUTION`：用于里程换算。
 - `BASE_MOTOR_COMMAND` 和 PID 参数：必须在架空和低速条件下逐步标定。
+- `PID_RECOVERY_KP` 控制偏离后的快速回正强度；`PID_RECOVERY_START_ERROR` 到 `PID_RECOVERY_FULL_ERROR` 定义增益和降速的渐变区间。
+- `LINE_ERROR_FILTER_ALPHA` 用于抑制孤立通道跳变；`RECENTER_MIN_BASE_SPEED_RATIO` 限制快速回正时的最低基础速度比例。
+- `STEERING_APPLY_RATE_PER_S` 限制修正量逐步增加，`STEERING_RELEASE_RATE_PER_S` 控制回中或换向时更快释放旧修正。
+- `MAX_MOTOR_COMMAND_DIFFERENCE` 是左右轮归一化命令差的固定硬上限，不再限制最小转弯半径。
 - `ROUTE_B_M`、`ROUTE_D_M`、`ROUTE_A_M`、`ROUTE_COMPLETE_M`：必须按实际赛道重新测量。
+- `FINISH_LINE_ARM_DISTANCE_M`：超过此里程后才允许识别终点线，默认取标定周长的一半。
+- `FINISH_LINE_CHANNEL_MIN_STRENGTH`、`FINISH_LINE_CONFIRM_MS`：八路全黑的单通道阈值和连续确认时间。
+- `FINISH_LINE_RUNOUT_M`：识别终点线后继续行驶的距离，默认 `0.10 m`。
 
 ## 6. 编译与烧录
 
@@ -164,13 +171,21 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 `
 
 当前 `car_esp32s3.ino` 直接运行自主循迹控制，不再创建 UART 测试任务，也不等待 Wi-Fi、编码器或启动按钮。传感器识别到黑线后使用 PID 计算左右轮差速；弯道会自动降速，急弯时允许内侧轮反转。短暂丢线时车辆按最后看到黑线的方向找线，350 ms 内仍未找回则制动。
 
-串口每 200 ms 输出一次循迹状态：
+串口每 200 ms 输出一次八通道原始灰度值：
 
 ```text
-[循迹] error=+0.321 strength=0.247 left=+0.56 right=+0.16
+[LINE_RAW] CH1=255 CH2=251 CH3=183 CH4= 12 CH5=  8 CH6=176 CH7=249 CH8=255
 ```
 
-`error` 为负表示黑线偏左，为正表示黑线偏右；`left` 和 `right` 是左右电机命令，范围为 `-1`～`1`。当前模式在识别不到黑线时不会持续盲目行驶。
+`CH1`～`CH8` 对应传感器 I2C 返回的通道 1～8；黑色趋近 0，白色趋近 255。当前模式在识别不到黑线时不会持续盲目行驶。
+
+导航打印任务同样每 200 ms 输出状态、转弯、误差、电机命令、编码器、距离和速度：
+
+```text
+[NAV] state=RUNNING turn=SMALL error=+0.321 left=+0.36 right=+0.08 encoder=120/118 distance=0.031m speed=0.089m/s
+```
+
+在 `loop()` 中使用一行 `navigationPrintTask(now);` 启用；注释该行即可关闭导航打印而不影响循迹控制。
 
 ## 8. 启动与运行
 
@@ -202,17 +217,14 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 `
 4. 复位后有 1.5 秒准备时间，随后识别到黑线即自动行驶。
 5. 根据实车振荡和过弯情况逐步调整 `BASE_MOTOR_COMMAND`、`PID_KP`、`PID_KI` 和 `PID_KD`。
 
-### 8.3 路线事件
+### 8.3 终点线与路线事件
 
-默认距离配置如下，必须按实际赛道标定：
+自主循迹入口只产生以下两个事件：
 
-| 累计距离 | 事件 | 行为 |
-| ---: | --- | --- |
-| 0 m | `START` | 按钮启动后上报 |
-| 1.50 m | `B` | 上报 B 点事件 |
-| 4.00 m | `D` | 上报 D 点事件 |
-| 6.50 m | `A` | 上报 A 点事件 |
-| 8.00 m | `COMPLETE` | 制动并进入完成状态 |
+| 条件 | 事件 | 行为 |
+| --- | --- | --- |
+| 自动开始循迹 | `START` | 立即上报 |
+| 超过半圈后八路连续检测到黑色，并再行驶 10 cm | `COMPLETE` | 制动并进入完成状态 |
 
 每个事件使用同一个 `event_id` 重复发送 5 个成功帧，接收端应按事件 ID 去重。
 
@@ -237,7 +249,7 @@ arduino-cli compile --fqbn esp32:esp32:esp32s3 `
 | --- | --- |
 | `READY` | 初始化完成，等待实体按钮 |
 | `RUNNING` | 正在循迹运行 |
-| `COMPLETE` | 到达完成距离并制动 |
+| `COMPLETE` | 识别终点线并续行 10 cm 后制动 |
 | `SAFE_STOP` | 故障锁存并制动 |
 
 进入 `SAFE_STOP` 后不会自动恢复。排除故障后必须断电检查或按复位键重新启动。

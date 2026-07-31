@@ -25,3 +25,26 @@ if ($LASTEXITCODE -ne 0) { throw 'I2C line sensor test compile failed' }
 
 & $lineSensorOutput
 if ($LASTEXITCODE -ne 0) { throw 'I2C line sensor test failed' }
+
+$lineSteeringTest = Join-Path $PSScriptRoot 'line_steering_tests.cpp'
+$lineSteeringOutput = Join-Path $PSScriptRoot 'line_steering_tests.exe'
+g++ -std=c++17 -Wall -Wextra -Werror -Wno-error=cpp `
+  -I (Join-Path $PSScriptRoot 'arduino_stubs') `
+  -I (Join-Path $root 'embedded\car_esp32s3') `
+  $lineSteeringTest $stubs -o $lineSteeringOutput
+if ($LASTEXITCODE -ne 0) { throw 'Line steering test compile failed' }
+
+& $lineSteeringOutput
+if ($LASTEXITCODE -ne 0) { throw 'Line steering test failed' }
+
+$finishLineTest = Join-Path $PSScriptRoot 'finish_line_stop_tests.cpp'
+$finishLineOutput = Join-Path $PSScriptRoot 'finish_line_stop_tests.exe'
+g++ -std=c++17 -Wall -Wextra -Werror -Wno-error=cpp `
+  -I (Join-Path $PSScriptRoot 'arduino_stubs') `
+  -I (Join-Path $root 'embedded\shared_protocol\src') `
+  -I (Join-Path $root 'embedded\car_esp32s3') `
+  $finishLineTest $stubs -o $finishLineOutput
+if ($LASTEXITCODE -ne 0) { throw 'Finish-line stop test compile failed' }
+
+& $finishLineOutput
+if ($LASTEXITCODE -ne 0) { throw 'Finish-line stop test failed' }

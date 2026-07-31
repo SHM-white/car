@@ -95,6 +95,15 @@ class LineSensors {
     return true;
   }
 
+  static bool allChannelsOnLine(const uint8_t channels[car_config::LINE_SENSOR_COUNT]) {
+    for (size_t i = 0; i < car_config::LINE_SENSOR_COUNT; ++i) {
+      float strength = channels[i] / 255.0F;
+      if (car_config::LINE_IS_DARK) strength = 1.0F - strength;
+      if (strength < car_config::FINISH_LINE_CHANNEL_MIN_STRENGTH) return false;
+    }
+    return true;
+  }
+
  private:
   static LineReading calculateLine(const uint8_t raw[car_config::LINE_SENSOR_COUNT]) {
     float weighted_sum = 0.0F;
@@ -180,8 +189,22 @@ class MotorDriver {
   }
 
   void drive(float left, float right) {
+    limitCommandDifference(left, right);
     setOne(car_config::LEFT_MOTOR_PWM_PIN, car_config::LEFT_MOTOR_IN1_PIN, car_config::LEFT_MOTOR_IN2_PIN, left);
     setOne(car_config::RIGHT_MOTOR_PWM_PIN, car_config::RIGHT_MOTOR_IN1_PIN, car_config::RIGHT_MOTOR_IN2_PIN, right);
+  }
+
+  static void limitCommandDifference(float &left, float &right) {
+    left = constrain(left, -1.0F, 1.0F);
+    right = constrain(right, -1.0F, 1.0F);
+    const float difference = left - right;
+    if (fabsf(difference) <= car_config::MAX_MOTOR_COMMAND_DIFFERENCE) return;
+
+    const float center = 0.5F * (left + right);
+    const float half_limit = 0.5F * car_config::MAX_MOTOR_COMMAND_DIFFERENCE;
+    const float signed_half_limit = difference > 0.0F ? half_limit : -half_limit;
+    left = constrain(center + signed_half_limit, -1.0F, 1.0F);
+    right = constrain(center - signed_half_limit, -1.0F, 1.0F);
   }
 
   void brake() {

@@ -42,13 +42,26 @@ const char *turnName(d_task::TurnClass turn) {
   next_print_ms = now_ms + kNavigationPrintPeriodMs;
 
   const LineFollower::NavigationData data = line_follower.navigationData();
-  Serial.printf("[导航] state=%s turn=%s line=%s error=%+.3f strength=%.3f left=%+.2f right=%+.2f encoder=%ld/%ld distance=%.3fm speed=%.3fm/s\n",
-                carStateName(data.state), turnName(data.turn),
-                data.line_valid ? "VALID" : "LOST", data.line_error,
-                data.line_strength, data.left_command, data.right_command,
+  Serial.printf("[NAV] state=%s turn=%s error=%+.3f left=%+.2f right=%+.2f encoder=%ld/%ld distance=%.3fm speed=%.3fm/s\n",
+                carStateName(data.state), turnName(data.turn), data.line_error,
+                data.left_command, data.right_command,
                 static_cast<long>(data.left_encoder_count),
                 static_cast<long>(data.right_encoder_count),
                 data.displacement_m, data.velocity_m_s);
+}
+
+[[maybe_unused]] void lineChannelsPrintTask(uint32_t now_ms) {
+  static uint32_t next_print_ms = 0;
+  if (static_cast<int32_t>(now_ms - next_print_ms) < 0) return;
+  next_print_ms = now_ms + kNavigationPrintPeriodMs;
+
+  uint8_t channels[car_config::LINE_SENSOR_COUNT] = {};
+  line_follower.lineChannels(channels);
+  Serial.printf("[LINE_RAW] CH1=%3u CH2=%3u CH3=%3u CH4=%3u CH5=%3u CH6=%3u CH7=%3u CH8=%3u\n",
+                static_cast<unsigned>(channels[0]), static_cast<unsigned>(channels[1]),
+                static_cast<unsigned>(channels[2]), static_cast<unsigned>(channels[3]),
+                static_cast<unsigned>(channels[4]), static_cast<unsigned>(channels[5]),
+                static_cast<unsigned>(channels[6]), static_cast<unsigned>(channels[7]));
 }
 
 [[maybe_unused]] void rosConnectionPrintTask(uint32_t now_ms) {
@@ -122,8 +135,9 @@ void loop() {
     udp_telemetry.sendHeartbeat(now);
   }
 
-  // Comment out either call to disable that periodic serial output.
-  navigationPrintTask(now);
+  // Each print task is enabled or disabled with one line.
+  //lineChannelsPrintTask(now);
+  //navigationPrintTask(now);
   //rosConnectionPrintTask(now);
 
   delay(1);

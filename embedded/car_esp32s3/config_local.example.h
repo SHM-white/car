@@ -64,7 +64,7 @@ constexpr bool LEFT_ENCODER_INVERTED = false;
 constexpr bool RIGHT_ENCODER_INVERTED = true;
 
 constexpr float WHEEL_DIAMETER_M = 0.065F;
-constexpr float WHEEL_TRACK_M = 0.0652F;
+constexpr float WHEEL_TRACK_M = 0.210F;
 constexpr int32_t ENCODER_COUNTS_PER_REVOLUTION = 780;
 constexpr float TARGET_SPEED_M_S = 0.090F;
 constexpr float SPEED_FEED_FORWARD_COMMAND = 0.21F;
@@ -73,10 +73,22 @@ constexpr float SPEED_KI = 0.80F;
 constexpr float SPEED_INTEGRAL_LIMIT = 0.20F;
 constexpr float MAX_BASE_MOTOR_COMMAND = 0.45F;
 constexpr float BASE_MOTOR_COMMAND = SPEED_FEED_FORWARD_COMMAND;
-constexpr float PID_KP = 0.62F;
-constexpr float PID_KI = 0.03F;
-constexpr float PID_KD = 0.015F;
-constexpr float PID_INTEGRAL_LIMIT = 0.35F;
+constexpr float PID_KP = 0.25F;
+constexpr float PID_RECOVERY_KP = 0.35F;
+constexpr float PID_RECOVERY_START_ERROR = 0.08F;
+constexpr float PID_RECOVERY_FULL_ERROR = 0.25F;
+constexpr float PID_KI = 0.0F;
+constexpr float PID_KD = 0.004F;
+constexpr float PID_INTEGRAL_LIMIT = 0.10F;
+constexpr float PID_INTEGRAL_CENTER_DECAY = 0.90F;
+constexpr float PID_DERIVATIVE_FILTER_ALPHA = 0.11F;
+constexpr float LINE_ERROR_FILTER_ALPHA = 0.12F;
+constexpr float LINE_ERROR_DEADBAND = 0.025F;
+constexpr float RECENTER_MIN_BASE_SPEED_RATIO = 0.65F;
+constexpr float MAX_MOTOR_COMMAND_DIFFERENCE = 0.24F;
+constexpr float MAX_STEERING_CORRECTION = MAX_MOTOR_COMMAND_DIFFERENCE * 0.5F;
+constexpr float STEERING_APPLY_RATE_PER_S = 0.40F;
+constexpr float STEERING_RELEASE_RATE_PER_S = 2.00F;
 constexpr float SMALL_TURN_ENTER = 0.18F;
 constexpr float SMALL_TURN_EXIT = 0.12F;
 constexpr float LARGE_TURN_ENTER = 0.48F;
@@ -93,6 +105,13 @@ constexpr float ROUTE_B_M = 1.50F;
 constexpr float ROUTE_D_M = 4.00F;
 constexpr float ROUTE_A_M = 6.50F;
 constexpr float ROUTE_COMPLETE_M = 8.00F;
+
+// Only recognize the wide black finish line after half a lap. After a stable
+// eight-channel detection, continue for 10 cm and then brake.
+constexpr float FINISH_LINE_ARM_DISTANCE_M = ROUTE_COMPLETE_M * 0.5F;
+constexpr float FINISH_LINE_CHANNEL_MIN_STRENGTH = 0.75F;
+constexpr uint32_t FINISH_LINE_CONFIRM_MS = 30;
+constexpr float FINISH_LINE_RUNOUT_M = 0.10F;
 
 constexpr uint32_t CONTROL_PERIOD_US = 5000;
 constexpr uint32_t ENCODER_PERIOD_MS = 20;

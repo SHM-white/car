@@ -61,7 +61,8 @@ constexpr bool LEFT_ENCODER_INVERTED = false;
 constexpr bool RIGHT_ENCODER_INVERTED = true;
 
 constexpr float WHEEL_DIAMETER_M = 0.065F;
-constexpr float WHEEL_TRACK_M = 0.0652F;
+constexpr float WHEEL_TRACK_M = 0.210F;
+constexpr float MIN_TURN_RADIUS_M = 0.500F;
 constexpr int32_t ENCODER_COUNTS_PER_REVOLUTION = 780;
 constexpr float TARGET_SPEED_M_S = 0.090F;
 constexpr float SPEED_FEED_FORWARD_COMMAND = 0.21F;
@@ -70,11 +71,27 @@ constexpr float SPEED_KP = 1.20F;
 constexpr float SPEED_KI = 0.80F;
 constexpr float SPEED_INTEGRAL_LIMIT = 0.20F;
 constexpr float MAX_BASE_MOTOR_COMMAND = 0.45F;
-constexpr float PID_KP = 0.32F;
-constexpr float PID_KI = 0.03F;
-constexpr float PID_KD = 0.015F;
-constexpr float PID_INTEGRAL_LIMIT = 0.35F;
-constexpr float MAX_STEERING_CORRECTION = 0.20F;
+// The measured straight-line centroid only spans about +/-0.18. Use a calm
+// center gain and ramp to a stronger gain while the car is visibly off line.
+constexpr float PID_KP = 0.25F;
+constexpr float PID_RECOVERY_KP = 0.45F;
+constexpr float PID_RECOVERY_START_ERROR = 0.012F;
+constexpr float PID_RECOVERY_FULL_ERROR = 0.30F;
+constexpr float PID_KI = 0.0F;
+constexpr float PID_KD = 0.004F;
+constexpr float PID_INTEGRAL_LIMIT = 0.52F;
+// 5 ms coefficients preserving approximately the previous 10 ms time constants.
+constexpr float PID_INTEGRAL_CENTER_DECAY = 0.90F;
+constexpr float PID_DERIVATIVE_FILTER_ALPHA = 0.11F;
+constexpr float LINE_ERROR_FILTER_ALPHA = 0.12F;
+constexpr float LINE_ERROR_DEADBAND = 0.022F;
+constexpr float RECENTER_MIN_BASE_SPEED_RATIO = 0.65F;
+constexpr float MAX_MOTOR_COMMAND_DIFFERENCE =
+    MAX_BASE_MOTOR_COMMAND * WHEEL_TRACK_M / MIN_TURN_RADIUS_M;
+constexpr float MAX_STEERING_CORRECTION = MAX_MOTOR_COMMAND_DIFFERENCE * 0.5F;
+// At 200 Hz these rates apply at most 0.002 per cycle and release 0.010.
+constexpr float STEERING_APPLY_RATE_PER_S = 0.73F;
+constexpr float STEERING_RELEASE_RATE_PER_S = 2.00F;
 constexpr float SMALL_TURN_ENTER = 0.18F;
 constexpr float SMALL_TURN_EXIT = 0.12F;
 constexpr float LARGE_TURN_ENTER = 0.48F;
@@ -90,6 +107,11 @@ constexpr float ROUTE_B_M = 1.50F;
 constexpr float ROUTE_D_M = 4.00F;
 constexpr float ROUTE_A_M = 6.50F;
 constexpr float ROUTE_COMPLETE_M = 8.00F;
+
+constexpr float FINISH_LINE_ARM_DISTANCE_M = ROUTE_COMPLETE_M * 0.7F;
+constexpr float FINISH_LINE_CHANNEL_MIN_STRENGTH = 0.75F;
+constexpr uint32_t FINISH_LINE_CONFIRM_MS = 30;
+constexpr float FINISH_LINE_RUNOUT_M = 0.10F;
 
 constexpr uint32_t CONTROL_PERIOD_US = 5000;
 constexpr uint32_t ENCODER_PERIOD_MS = 20;
