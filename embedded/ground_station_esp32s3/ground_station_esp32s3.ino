@@ -39,10 +39,19 @@ void loop() {
   }
   hmi.updateLinks(udp_link.connected(), udp_link.carFresh(now), udp_link.rosFresh(now));
 
+  // 任务提交后锁定三个任务按钮（显示层置灰 + 此处双保险），防止误触改选。
+  // 车辆 boot 变化会重置模型 selection，自动解锁。
   switch (display.poll()) {
-    case TouchAction::TASK_1: hmi.chooseTask(1); break;
-    case TouchAction::TASK_2: hmi.chooseTask(2); break;
-    case TouchAction::TASK_TEST: hmi.chooseTask(3); break;
+    case TouchAction::TASK_1:
+      if (!hmi.controlsLocked()) hmi.chooseTask(1);
+      break;
+    case TouchAction::TASK_2:
+      if (!hmi.controlsLocked()) hmi.chooseTask(2);
+      break;
+    // TEST 任务（task 3）走与 TASK 1/2 相同的模型确认流程
+    case TouchAction::TASK_TEST:
+      if (!hmi.controlsLocked()) hmi.chooseTask(3);
+      break;
     case TouchAction::CONFIRM:
       if (hmi.confirmChoice(esp_random())) next_selection_send_ms = now;
       break;

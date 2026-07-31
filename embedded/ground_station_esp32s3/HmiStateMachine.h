@@ -104,6 +104,9 @@ class HmiStateMachine {
 
   bool selectionNeedsSending() const { return selection_pending_send_; }
   d_task::TaskSelection selection() const { return {selection_id_, car_boot_id_, pending_task_}; }
+  // 任务一经提交（等待回执或已确认），锁定三个任务按钮，禁止中途改选。
+  // 否则 selection() 会以当前 pending_task_ 重发旧 selection_id，造成任务漂移。
+  bool controlsLocked() const { return selection_pending_send_ || selection_committed_; }
   HmiState state() const { return state_; }
   uint8_t selectedTask() const { return selected_task_; }
   uint8_t pendingTask() const { return pending_task_; }

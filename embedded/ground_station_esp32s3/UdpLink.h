@@ -77,7 +77,12 @@ class UdpLink {
              d_task::decodeMissionStatus(payload, header.payload_length, result.mission)) {
       result.kind = IncomingKind::MISSION_STATUS;
     }
-    else if (header.type == d_task::MessageType::HEARTBEAT && header.payload_length == 0) result.kind = IncomingKind::HEARTBEAT;
+    else if (header.type == d_task::MessageType::HEARTBEAT && header.payload_length == 0) {
+      // 心跳也刷新链路时间戳：数据龄=距最近一次有效收包的时间，若忽略心跳，
+      // ROS 侧（心跳 250ms、状态 2Hz）的数据龄会以 500ms 为单位跳变，显示像随机数。
+      result.kind = IncomingKind::HEARTBEAT;
+      peer.last_received_ms = now_ms; peer.has_received = true;
+    }
     else ++rejected_packets_;
     return result;
   }

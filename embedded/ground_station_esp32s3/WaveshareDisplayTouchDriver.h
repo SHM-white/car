@@ -32,6 +32,8 @@ class WaveshareDisplayTouchDriver {
   void createUi();
   void setStatus(lv_obj_t *label, bool fresh, bool healthy,
                  const char *healthy_text, const char *unhealthy_text);
+  void setButtonLocked(lv_obj_t *button, bool locked);
+  static uint32_t smoothAge(uint32_t smoothed, uint32_t sample);
 
   esp_panel::board::Board *board_ = nullptr;
   std::atomic<uint8_t> pending_action_{static_cast<uint8_t>(TouchAction::NONE)};
@@ -74,6 +76,9 @@ class WaveshareDisplayTouchDriver {
   bool local_test_mode_ = false;
   uint32_t fps_sample_ms_ = 0;
   uint32_t fps_sample_vsync_ = 0;
+  // 数据龄 EMA 平滑值：瞬时 age 是锯齿波（0..发送周期），直接显示会像随机数
+  uint32_t smoothed_car_age_ms_ = UINT32_MAX;
+  uint32_t smoothed_ros_age_ms_ = UINT32_MAX;
 };
 
 #endif

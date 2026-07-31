@@ -379,14 +379,35 @@ void WaveshareDisplayTouchDriver::setStatus(lv_obj_t *label, bool fresh, bool he
   lv_obj_set_style_text_color(label, color(healthy ? kGreen : kAmber), 0);
 }
 
+uint32_t WaveshareDisplayTouchDriver::smoothAge(uint32_t smoothed, uint32_t sample) {
+  if (sample == UINT32_MAX) return UINT32_MAX;   // NO DATA 透传
+  if (smoothed == UINT32_MAX) return sample;      // 首次采样
+  return (smoothed * 7 + sample) / 8;             // EMA(1/8)，时间常数约 800ms
+}
+
+void WaveshareDisplayTouchDriver::setButtonLocked(lv_obj_t *button, bool locked) {
+  if (locked) {
+    lv_obj_add_state(button, LV_STATE_DISABLED);
+    lv_obj_clear_flag(button, LV_OBJ_FLAG_CLICKABLE);
+  } else {
+    lv_obj_clear_state(button, LV_STATE_DISABLED);
+    lv_obj_add_flag(button, LV_OBJ_FLAG_CLICKABLE);
+  }
+}
+
 void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
                                           uint32_t car_age_ms, uint32_t ros_age_ms) {
   if (!ready_ || !lvgl_port_lock(50)) return;
 
   char car_age[24];
   char ros_age[24];
-  formatAge(car_age_ms, d_task::kTelemetryStaleMs, car_age, sizeof(car_age));
-  formatAge(ros_age_ms, hmi_config::ROS_STATUS_STALE_MS, ros_age, sizeof(ros_age));
+  // 数据龄 EMA 平滑：瞬时 age 是锯齿波（CAR 20Hz→0~50ms，ROS 心跳 250ms→0~250ms），
+  // 100ms 渲染一次直接显示会像随机数跳变；平滑后显示稳定读数。
+  // 注意：链路新鲜度判定仍用下面的瞬时值（car_fresh/ros_fresh），平滑只影响显示。
+  smoothed_car_age_ms_ = smoothAge(smoothed_car_age_ms_, car_age_ms);
+  smoothed_ros_age_ms_ = smoothAge(smoothed_ros_age_ms_, ros_age_ms);
+  formatAge(smoothed_car_age_ms_, d_task::kTelemetryStaleMs, car_age, sizeof(car_age));
+  formatAge(smoothed_ros_age_ms_, hmi_config::ROS_STATUS_STALE_MS, ros_age, sizeof(ros_age));
   lv_label_set_text_fmt(link_label_, "CAR %s   ROS %s", car_age, ros_age);
   lv_label_set_text(state_label_, hmiStateName(model.state()));
   lv_label_set_text(mission_label_, missionPhaseName(model.missionPhase()));
@@ -412,6 +433,13 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   // 因此“启动测试后按钮变灰”的 bug 被消除。
   if (local_test_mode_ || model.pendingTask() == 3) lv_obj_add_state(test_task_button_, LV_STATE_CHECKED);
   else lv_obj_clear_state(test_task_button_, LV_STATE_CHECKED);
+
+  // 任务已提交/执行中：锁定三个任务按钮（灰色 + 不可点击），防止误触改选。
+  // 车辆 boot 变化（onCarTelemetry 检测到新会话）会自动重置 selection，解锁按钮。
+  const bool task_locked = model.controlsLocked();
+  setButtonLocked(task1_button_, task_locked);
+  setButtonLocked(task2_button_, task_locked);
+  setButtonLocked(test_task_button_, task_locked);
 
   if (model.confirmationVisible()) {
     lv_label_set_text_fmt(confirm_prompt_, "CONFIRM TASK %u?", model.pendingTask());
