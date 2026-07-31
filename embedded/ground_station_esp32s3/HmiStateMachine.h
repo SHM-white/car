@@ -42,8 +42,9 @@ class HmiStateMachine {
       else state_ = HmiState::CAR_RUNNING;
     } else if (telemetry.state == d_task::CarState::COMPLETE) {
       state_ = selection_committed_ ? HmiState::COMPLETE : HmiState::FAULT;
+      selection_committed_ = false;  // 任务结束，解锁按钮允许重新选题
     } else if (telemetry.state == d_task::CarState::SAFE_STOP) {
-      enterFault(telemetry.fault_flags, true);
+      enterFault(telemetry.fault_flags, true);  // enterFault 已重置 selection_committed_
     }
   }
 
@@ -104,8 +105,10 @@ class HmiStateMachine {
 
   bool selectionNeedsSending() const { return selection_pending_send_; }
   d_task::TaskSelection selection() const { return {selection_id_, car_boot_id_, pending_task_}; }
-  // 任务一经提交（等待回执或已确认），锁定三个任务按钮，禁止中途改选。
-  // 否则 selection() 会以当前 pending_task_ 重发旧 selection_id，造成任务漂移。
+  // 任务已提交（SELECTED / ARMED / RUNNING）时锁定按钮，防止误触改选。
+  // COMPLETE / FAULT / SAFE_STOP / vehicle boot 变化时自动解锁。
+  // selection_committed_ 在 ROS 回执 SELECTION_ACKED 时置 true，
+  // 在 COMPLETE / SAFE_STOP / enterFault 时重置为 false。
   bool controlsLocked() const { return selection_pending_send_ || selection_committed_; }
   HmiState state() const { return state_; }
   uint8_t selectedTask() const { return selected_task_; }
@@ -128,6 +131,7 @@ class HmiStateMachine {
   void enterFault(uint16_t reason, bool latch) {
     fault_flags_ |= reason; fault_latched_ |= latch; state_ = HmiState::FAULT;
     selection_committed_ = false;
+    selection_pending_send_ = false;  // FAULT 时全面解锁，允许重新选题
   }
 
   HmiState state_ = HmiState::BOOT_WAITING;
