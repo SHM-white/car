@@ -238,9 +238,8 @@ void WaveshareDisplayTouchDriver::testTaskEvent(lv_event_t *event) {
 
 void WaveshareDisplayTouchDriver::confirmEvent(lv_event_t *event) {
   auto *driver = static_cast<WaveshareDisplayTouchDriver *>(lv_event_get_user_data(event));
-  // The TEST dialog is owned by the display driver, so the HMI model cannot
-  // close it through confirmChoice(). Leave test mode before forwarding the
-  // action; this also makes confirm/cancel behave consistently in both modes.
+  // TEST 任务已接入模型确认流程（chooseTask(3)），确认框由模型统一管理；
+  // 退出本地 TEST 模式标志后，TEST 按钮的绿色由 render 中的 pendingTask()==3 维持。
   driver->local_test_mode_ = false;
   driver->queueAction(TouchAction::CONFIRM);
 }
@@ -408,14 +407,18 @@ void WaveshareDisplayTouchDriver::render(const HmiStateMachine &model,
   else lv_obj_clear_state(task1_button_, LV_STATE_CHECKED);
   if (model.pendingTask() == 2) lv_obj_add_state(task2_button_, LV_STATE_CHECKED);
   else lv_obj_clear_state(task2_button_, LV_STATE_CHECKED);
-  if (local_test_mode_) lv_obj_add_state(test_task_button_, LV_STATE_CHECKED);
+  // TEST(task 3)：点击 TEST 或模型已确认启动测试任务时都保持绿色。
+  // confirmEvent 会清除 local_test_mode_，但 pendingTask()==3 在确认后仍成立，
+  // 因此“启动测试后按钮变灰”的 bug 被消除。
+  if (local_test_mode_ || model.pendingTask() == 3) lv_obj_add_state(test_task_button_, LV_STATE_CHECKED);
   else lv_obj_clear_state(test_task_button_, LV_STATE_CHECKED);
 
-  if (local_test_mode_) {
-    lv_label_set_text(confirm_prompt_, "LOCAL TEST TASK");
-    lv_obj_clear_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
-  } else if (model.confirmationVisible()) {
+  if (model.confirmationVisible()) {
     lv_label_set_text_fmt(confirm_prompt_, "CONFIRM TASK %u?", model.pendingTask());
+    lv_obj_clear_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
+  } else if (local_test_mode_) {
+    // TEST 已点击但模型尚未收到 TASK_TEST 事件（一帧过渡），显示同样的确认框
+    lv_label_set_text(confirm_prompt_, "CONFIRM TASK 3?");
     lv_obj_clear_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
   } else {
     lv_obj_add_flag(confirm_overlay_, LV_OBJ_FLAG_HIDDEN);
